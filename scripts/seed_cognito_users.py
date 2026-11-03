@@ -2,8 +2,10 @@
 
 import json
 import os
+import re
 import subprocess
 import sys
+import tempfile
 
 
 def roster():
@@ -30,14 +32,20 @@ def roster():
 
 def cognito(operation, payload, expected_error=None):
     # Keep passwords out of command arguments and raw AWS output out of CI logs.
-    result = subprocess.run(
-        ["aws", "cognito-idp", operation, "--cli-input-json", "file:///dev/stdin", "--output", "json"],
-        input=json.dumps(payload), capture_output=True, text=True,
-    )
+    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as request:
+        json.dump(payload, request)
+        request.flush()
+        result = subprocess.run(
+            ["aws", "cognito-idp", operation, "--cli-input-json",
+             f"file://{request.name}", "--output", "json", "--no-cli-pager"],
+            capture_output=True, text=True,
+        )
     if result.returncode:
-        if expected_error and f"({expected_error})" in result.stderr:
+        match = re.search(r"An error occurred \(([A-Za-z0-9]+)\) when calling", result.stderr)
+        code = match.group(1) if match else f"AWS CLI exit {result.returncode}"
+        if code == expected_error:
             return None
-        sys.exit(f"Cognito {operation} failed. Check deployment IAM permissions and the demo roster.")
+        sys.exit(f"Cognito {operation} failed ({code}).")
     return json.loads(result.stdout) if result.stdout.strip() else {}
 
 
