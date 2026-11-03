@@ -76,6 +76,12 @@ jobs:
         with:
           python-version: "3.13"
 
+      - name: Validate demo account roster
+        if: inputs.action == 'terraform_apply'
+        env:
+          DEMO_COGNITO_USERS: ${{ secrets.DEMO_COGNITO_USERS }}
+        run: python3 ../scripts/seed_cognito_users.py --validate
+
       - name: Prepare Lambda deployment package
         run: |
           export TF_VAR_lambda_zip_path="$RUNNER_TEMP/repair-cafe-backend.zip"
@@ -154,6 +160,14 @@ jobs:
       - name: Apply terraform_apply
         if: inputs.action == 'terraform_apply'
         run: terraform apply -lock-timeout=5m "$RUNNER_TEMP/setup.tfplan"
+
+      - name: Create confirmed Cognito demo users
+        if: inputs.action == 'terraform_apply'
+        env:
+          DEMO_COGNITO_USERS: ${{ secrets.DEMO_COGNITO_USERS }}
+        run: |
+          export COGNITO_POOL_ID="$(terraform output -raw cognito_user_pool_id)"
+          python3 ../scripts/seed_cognito_users.py
 
       - name: Deploy frontend files and configuration
         if: inputs.action == 'terraform_apply'

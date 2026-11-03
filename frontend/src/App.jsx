@@ -88,8 +88,8 @@ export default function App() {
       await checkBackend();
     } catch (signInError) {
       const messages = {
-        NotAuthorizedException: "Incorrect email or password.",
-        UserNotFoundException: "Incorrect email or password.",
+        NotAuthorizedException: "Account not found or password incorrect.",
+        UserNotFoundException: "Account not found or password incorrect.",
         UserNotConfirmedException: "Please verify your email before logging in.",
         PasswordResetRequiredException: "Your password must be reset before you can log in.",
       };
@@ -149,7 +149,7 @@ export default function App() {
                 value={password} onChange={(event) => setPassword(event.target.value)} /></p>
             <button type="submit">{busy ? "Logging in…" : "Log in"}</button>
           </fieldset>
-          <p>Use an existing, confirmed Cognito account. Signup and password reset are coming next.</p>
+          <p>Use the demo account provided by your team.</p>
         </form>
       )}
       {error && <p role="alert">{error}</p>}
