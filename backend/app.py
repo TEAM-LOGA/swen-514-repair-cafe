@@ -3,7 +3,9 @@
 import json
 import logging
 import os
+from datetime import datetime, timezone
 from functools import lru_cache
+from uuid import uuid4
 
 LOGGER = logging.getLogger(__name__)
 
@@ -92,6 +94,62 @@ def _summarize(source):
     })
 
 
+@lru_cache(maxsize=1)
+def _requests_table():
+    import boto3
+
+    return boto3.resource("dynamodb").Table(os.environ["REQUESTS_TABLE_NAME"])
+
+
+def _create_request(event, requester_id):
+    try:
+        body = json.loads(event.get("body") or "")
+    except (TypeError, ValueError):
+        return _response(400, {"error": "Send a JSON object with item_name and description."})
+    if not isinstance(body, dict):
+        return _response(400, {"error": "Send a JSON object with item_name and description."})
+
+    item_name = body.get("item_name")
+    description = body.get("description")
+    if not isinstance(item_name, str) or not 1 <= len(item_name.strip()) <= 120:
+        return _response(400, {"error": "Item name must be 1–120 characters."})
+    if not isinstance(description, str) or not 1 <= len(description.strip()) <= 2000:
+        return _response(400, {"error": "Description must be 1–2,000 characters."})
+
+    # Ownership and status come from the server, never from the form.
+    request = {
+        "request_id": str(uuid4()),
+        "requester_id": requester_id,
+        "item_name": item_name.strip(),
+        "description": description.strip(),
+        "status": "Submitted",
+        "created_at": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+    }
+    try:
+        _requests_table().put_item(Item=request, ConditionExpression="attribute_not_exists(request_id)")
+    except Exception as error:
+        LOGGER.error("Repair request write failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to save the repair request."})
+    return _response(201, request)
+
+
+def _list_requests(requester_id):
+    try:
+        result = _requests_table().query(
+            IndexName=os.environ["REQUESTER_INDEX_NAME"],
+            KeyConditionExpression="requester_id = :requester",
+            ExpressionAttributeValues={":requester": requester_id},
+            ProjectionExpression="request_id, item_name, description, #status, created_at",
+            ExpressionAttributeNames={"#status": "status"},
+            ScanIndexForward=False,
+            Limit=50,
+        )
+    except Exception as error:
+        LOGGER.error("Repair request query failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to load repair requests."})
+    return _response(200, {"requests": result.get("Items", [])})
+
+
 # decides what to do with each event
 def lambda_handler(event, context):
     if not isinstance(event, dict):
@@ -109,6 +167,10 @@ def lambda_handler(event, context):
                 "message": "Repair Cafe backend is running.",
                 "user_id": claims["sub"],
             })
+        if event.get("routeKey") == "POST /requests":
+            return _create_request(event, claims["sub"])
+        if event.get("routeKey") == "GET /requests":
+            return _list_requests(claims["sub"])
         return _response(501, {"error": "This repair workflow route is not implemented yet."})
 
     action = event.get("action", "health")

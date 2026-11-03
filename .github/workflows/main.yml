@@ -169,6 +169,16 @@ jobs:
           export COGNITO_POOL_ID="$(terraform output -raw cognito_user_pool_id)"
           python3 ../scripts/seed_cognito_users.py
 
+      - name: Seed sample repair requests
+        if: inputs.action == 'terraform_apply'
+        env:
+          DEMO_COGNITO_USERS: ${{ secrets.DEMO_COGNITO_USERS }}
+        run: |
+          COGNITO_POOL_ID="$(terraform output -raw cognito_user_pool_id)"
+          REQUESTS_TABLE_NAME="$(terraform output -json database_table_names | jq -er '.requests')"
+          export COGNITO_POOL_ID REQUESTS_TABLE_NAME
+          python3 ../scripts/seed_repair_requests.py
+
       - name: Deploy frontend files and configuration
         if: inputs.action == 'terraform_apply'
         run: |

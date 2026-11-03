@@ -1,3 +1,4 @@
+import RepairRequests from "./RepairRequests.jsx";
 import { useEffect, useState } from "react";
 import { getCurrentUser, signIn, signOut } from "aws-amplify/auth";
 import { configureAuth, fetchProfile } from "./auth.js";
@@ -135,6 +136,7 @@ export default function App() {
             setBusy(true);
             try { await checkBackend(); } finally { setBusy(false); }
           }}>Check backend connection</button>
+          <RepairRequests key={user.userId} config={config} />
         </section>
       ) : (
         <form onSubmit={handleLogin} aria-labelledby="login-heading">
