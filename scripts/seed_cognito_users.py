@@ -30,13 +30,13 @@ def roster():
         sys.exit("Set DEMO_COGNITO_USERS to a JSON object of unique email addresses and Cognito-compliant passwords.")
 
 
-def cognito(operation, payload, expected_error=None):
+def aws_call(service, operation, payload, expected_error=None):
     # Keep passwords out of command arguments and raw AWS output out of CI logs.
     with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as request:
         json.dump(payload, request)
         request.flush()
         result = subprocess.run(
-            ["aws", "cognito-idp", operation, "--cli-input-json",
+            ["aws", service, operation, "--cli-input-json",
              f"file://{request.name}", "--output", "json", "--no-cli-pager"],
             capture_output=True, text=True,
         )
@@ -45,8 +45,12 @@ def cognito(operation, payload, expected_error=None):
         code = match.group(1) if match else f"AWS CLI exit {result.returncode}"
         if code == expected_error:
             return None
-        sys.exit(f"Cognito {operation} failed ({code}).")
+        sys.exit(f"AWS {service} {operation} failed ({code}).")
     return json.loads(result.stdout) if result.stdout.strip() else {}
+
+
+def cognito(operation, payload, expected_error=None):
+    return aws_call("cognito-idp", operation, payload, expected_error)
 
 
 def main():
