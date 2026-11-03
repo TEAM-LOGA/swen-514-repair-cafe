@@ -36,17 +36,27 @@ export async function configureAuth() {
 }
 
 // API Gateway requires the Cognito access token, not the ID token.
-export async function fetchProfile(config) {
+export async function apiRequest(config, path, { method = "GET", body, signal } = {}) {
   const session = await fetchAuthSession();
   const token = session.tokens?.accessToken;
   if (!token) throw new Error("Your session has expired. Please log in again.");
 
-  const response = await fetch(`${config.apiUrl.replace(/\/$/, "")}/me`, {
-    headers: { Authorization: `Bearer ${token.toString()}` },
+  const headers = { Authorization: `Bearer ${token.toString()}` };
+  if (body !== undefined) headers["Content-Type"] = "application/json";
+  const response = await fetch(new URL(path, config.apiUrl), {
+    method,
+    headers,
+    body: body === undefined ? undefined : JSON.stringify(body),
     cache: "no-store",
+    signal,
   });
-  if (!response.ok) {
-    throw new Error(`The backend request failed (HTTP ${response.status}).`);
+  const result = await response.json().catch(() => null);
+  if (!response.ok || !result) {
+    throw new Error(result?.error || `The backend request failed (HTTP ${response.status}).`);
   }
-  return response.json();
+  return result;
+}
+
+export function fetchProfile(config) {
+  return apiRequest(config, "/me");
 }
