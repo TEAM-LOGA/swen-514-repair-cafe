@@ -9,6 +9,18 @@ from uuid import uuid4
 
 LOGGER = logging.getLogger(__name__)
 
+# Max file size allowed for presigned upload URLs (10 MB).
+MAX_UPLOAD_BYTES = 10 * 1024 * 1024
+
+# File types accepted for repair request photos / documents.
+ALLOWED_CONTENT_TYPES = {
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+    "image/gif",
+    "application/pdf",
+}
+
 # instructions for the model
 SUMMARY_INSTRUCTIONS = """Create a short repair handoff draft for a volunteer to review.
 Use only the supplied volunteer-authored notes and confirmed facts.
@@ -101,6 +113,13 @@ def _requests_table():
     return boto3.resource("dynamodb").Table(os.environ["REQUESTS_TABLE_NAME"])
 
 
+@lru_cache(maxsize=1)
+def _s3_client():
+    import boto3
+
+    return boto3.client("s3")
+
+
 def _create_request(event, requester_id):
     try:
         body = json.loads(event.get("body") or "")
@@ -150,6 +169,73 @@ def _list_requests(requester_id):
     return _response(200, {"requests": result.get("Items", [])})
 
 
+def _create_upload_url(event, requester_id, path_params):
+    """Generate a presigned S3 PUT URL so the browser can upload a file directly."""
+    request_id = path_params.get("request_id", "")
+    if not request_id:
+        return _response(400, {"error": "Missing request_id."})
+
+    # Verify the request belongs to the authenticated user before issuing a URL.
+    try:
+        item = _requests_table().get_item(
+            Key={"request_id": request_id},
+            ProjectionExpression="requester_id",
+        ).get("Item")
+    except Exception as error:
+        LOGGER.error("Request ownership check failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to verify repair request ownership."})
+
+    if not item:
+        return _response(404, {"error": "Repair request not found."})
+    if item.get("requester_id") != requester_id:
+        return _response(403, {"error": "You do not own this repair request."})
+
+    try:
+        body = json.loads(event.get("body") or "")
+    except (TypeError, ValueError):
+        return _response(400, {"error": "Send a JSON object with content_type and file_name."})
+    if not isinstance(body, dict):
+        return _response(400, {"error": "Send a JSON object with content_type and file_name."})
+
+    content_type = body.get("content_type", "")
+    file_name = body.get("file_name", "")
+    if content_type not in ALLOWED_CONTENT_TYPES:
+        return _response(400, {
+            "error": f"Unsupported file type. Allowed: {', '.join(sorted(ALLOWED_CONTENT_TYPES))}."
+        })
+    if not isinstance(file_name, str) or not 1 <= len(file_name.strip()) <= 200:
+        return _response(400, {"error": "file_name must be 1-200 characters."})
+
+    bucket = os.environ.get("UPLOADS_BUCKET_NAME")
+    if not bucket:
+        return _response(500, {"error": "UPLOADS_BUCKET_NAME is not configured."})
+
+    file_id = str(uuid4())
+    s3_key = f"requests/{request_id}/uploads/{file_id}"
+
+    try:
+        presigned_url = _s3_client().generate_presigned_url(
+            "put_object",
+            Params={
+                "Bucket": bucket,
+                "Key": s3_key,
+                "ContentType": content_type,
+            },
+            ExpiresIn=300,  # 5 minutes
+            HttpMethod="PUT",
+        )
+    except Exception as error:
+        LOGGER.error("Presigned URL generation failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to generate upload URL."})
+
+    return _response(200, {
+        "file_id": file_id,
+        "upload_url": presigned_url,
+        "s3_key": s3_key,
+        "expires_in": 300,
+    })
+
+
 # decides what to do with each event
 def lambda_handler(event, context):
     if not isinstance(event, dict):
@@ -162,15 +248,19 @@ def lambda_handler(event, context):
         claims = request.get("authorizer", {}).get("jwt", {}).get("claims", {})
         if not claims.get("sub") or claims.get("token_use") != "access":
             return _response(401, {"error": "A valid Cognito access token is required."})
-        if event.get("routeKey") == "GET /me":
+        route = event.get("routeKey")
+        path_params = event.get("pathParameters") or {}
+        if route == "GET /me":
             return _response(200, {
                 "message": "Repair Cafe backend is running.",
                 "user_id": claims["sub"],
             })
-        if event.get("routeKey") == "POST /requests":
+        if route == "POST /requests":
             return _create_request(event, claims["sub"])
-        if event.get("routeKey") == "GET /requests":
+        if route == "GET /requests":
             return _list_requests(claims["sub"])
+        if route == "POST /requests/{request_id}/uploads":
+            return _create_upload_url(event, claims["sub"], path_params)
         return _response(501, {"error": "This repair workflow route is not implemented yet."})
 
     action = event.get("action", "health")
