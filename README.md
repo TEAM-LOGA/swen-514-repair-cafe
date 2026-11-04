@@ -1,13 +1,12 @@
-# Repair Cafe
+# swen-514-repair-cafe
 
 Repair Cafe is a course project for connecting people who need an item repaired with volunteer fixers. The repository contains AWS infrastructure managed with Terraform, a Python Lambda backend, and a small static website.
 
 ## Current status
 
 - Terraform provisions the AWS resources, including API Gateway, Lambda, Cognito, DynamoDB, S3, SNS, and the Bedrock permissions used by the backend.
-- The Lambda currently handles `GET /me`, plus `health` and `summarize` demo events when invoked directly. API Gateway declares additional routes, but the Lambda does not implement them yet and returns `501` for those routes.
-- The website is currently a placeholder page. It does not yet provide Cognito sign-in, request forms, or notification controls.
-- The SNS topic and IAM permissions are infrastructure resources; they do not by themselves make request notifications usable from the app.
+- The Lambda currently handles `GET /me`, plus `health` and `summarize` demo events when invoked directly.
+
 
 ## Technology
 
@@ -86,8 +85,6 @@ Copy the example variables file and fill in the deployment values:
 cd terraform
 cp terraform.tfvars.example terraform.tfvars
 ```
-
-Before running `terraform plan`, build a deployment ZIP containing `backend/app.py` and its dependencies at the ZIP root, then set `lambda_zip_path` in `terraform.tfvars` to that ZIP. The GitHub Actions workflow performs this packaging step automatically. Initialize Terraform with a configured backend and credentials before planning or applying. Do not commit secrets, state files, or a populated `terraform.tfvars` file.
 
 ## API and backend notes
 
