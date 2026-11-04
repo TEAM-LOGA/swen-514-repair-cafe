@@ -45,6 +45,11 @@ variable "uploads_bucket_arn" {
   nullable    = false
 }
 
+variable "admin_requests_topic_arns" {
+  description = "Admin-only SNS topics for new request details."
+  type        = list(string)
+}
+
 variable "notifications_topic_arn" {
   description = "SNS topic ARN for status messages and requester email enrollment."
   type        = string

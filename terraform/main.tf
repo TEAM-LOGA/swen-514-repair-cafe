@@ -81,14 +81,15 @@ module "step_functions" {
 module "lambda_function" {
   source = "./modules/lambda_function"
 
-  name_prefix             = local.name_prefix
-  zip_path                = var.lambda_zip_path
-  handler                 = var.lambda_handler
-  table_arns              = values(module.database.table_arns)
-  request_index_arns      = module.database.request_index_arns
-  uploads_bucket_arn      = module.uploads.bucket_arn
-  notifications_topic_arn = module.notifications.topic_arn
-  bedrock_model_arn       = var.bedrock_model_arn
+  name_prefix               = local.name_prefix
+  zip_path                  = var.lambda_zip_path
+  handler                   = var.lambda_handler
+  table_arns                = values(module.database.table_arns)
+  request_index_arns        = module.database.request_index_arns
+  uploads_bucket_arn        = module.uploads.bucket_arn
+  notifications_topic_arn   = module.notifications.topic_arn
+  admin_requests_topic_arns = module.notifications.admin_requests_topic_arns
+  bedrock_model_arn         = var.bedrock_model_arn
 
   extraction_state_machine_arn = module.step_functions.state_machine_arn
 
@@ -101,6 +102,8 @@ module "lambda_function" {
     VOLUNTEER_INDEX_NAME         = module.database.request_index_names.volunteer
     UPLOADS_BUCKET_NAME          = module.uploads.bucket_name
     NOTIFICATIONS_TOPIC_ARN      = module.notifications.topic_arn
+    ADMIN_REQUESTS_TOPIC_ARN     = try(module.notifications.admin_requests_topic_arns[0], "")
+    FRONTEND_WEBSITE_URL         = module.frontend.website_url
     COGNITO_USER_POOL_ID         = module.auth.user_pool_id
     COGNITO_CLIENT_ID            = module.auth.client_id
     COGNITO_ISSUER_URL           = module.auth.issuer_url

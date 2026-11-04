@@ -87,7 +87,7 @@ resource "aws_iam_role_policy" "backend" {
         Sid      = "PublishRepairStatus"
         Effect   = "Allow"
         Action   = "sns:Publish"
-        Resource = var.notifications_topic_arn
+        Resource = concat([var.notifications_topic_arn], var.admin_requests_topic_arns)
       },
       {
         Sid      = "SubscribeRequesterEmail"

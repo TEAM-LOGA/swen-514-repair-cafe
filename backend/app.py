@@ -150,7 +150,10 @@ def _update_status_and_notify(user_id, request_id, status):
             Subject="Repair Cafe update available",
             # Keep the email generic: SNS filter-policy changes are eventually
             # consistent, so a new subscription must never receive request data.
-            Message="A repair request you follow has an update. Sign in to Repair Cafe to view it.",
+            Message=(
+                "A repair request you follow has an update. Sign in to Repair Cafe to view it."
+                f"\n\n{os.environ['FRONTEND_WEBSITE_URL']}"
+            ),
             MessageAttributes={
                 "requester_id": {"DataType": "String", "StringValue": request["requester_id"]}
             },
@@ -264,14 +267,20 @@ def _create_request(event, requester_id):
     except Exception as error:
         LOGGER.error("Repair request write failed: %s", type(error).__name__)
         return _response(500, {"error": "Unable to save the repair request."})
-    topic_arn = os.environ.get("NOTIFICATIONS_TOPIC_ARN")
+    topic_arn = os.environ.get("ADMIN_REQUESTS_TOPIC_ARN")
     if topic_arn:
         try:
             sns, _ = _aws_clients()
             sns.publish(
                 TopicArn=topic_arn,
                 Subject="New Repair Cafe request",
-                Message="A new repair request was submitted to Repair Cafe.",
+                Message=(
+                    "A new repair request was submitted to Repair Cafe.\n\n"
+                    f"Item: {request['item_name']}\n"
+                    f"Status: {request['status']}\n"
+                    f"Request ID: {request['request_id']}\n\n"
+                    f"Sign in: {os.environ['FRONTEND_WEBSITE_URL']}"
+                ),
             )
         except Exception as error:
             # The request is already saved. Preserve success so clients do not create duplicates.

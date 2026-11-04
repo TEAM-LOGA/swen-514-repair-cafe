@@ -24,3 +24,15 @@ resource "aws_sns_topic_subscription" "admin" {
   protocol  = "email"
   endpoint  = var.admin_email
 }
+
+resource "aws_sns_topic" "admin_requests" {
+  count = var.admin_email == "" ? 0 : 1
+  name  = "${var.name_prefix}-admin-requests"
+}
+
+resource "aws_sns_topic_subscription" "admin_requests" {
+  count     = length(aws_sns_topic.admin_requests)
+  topic_arn = aws_sns_topic.admin_requests[count.index].arn
+  protocol  = "email"
+  endpoint  = var.admin_email
+}
