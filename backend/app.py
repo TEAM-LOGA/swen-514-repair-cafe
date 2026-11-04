@@ -383,8 +383,8 @@ def _store_extraction(event):
     try:
         _records_table().update_item(
             Key={"request_id": request_id, "record_key": record_key},
-            UpdateExpression="SET #s = :s, extracted_text = :t, lines = :l, completed_at = :c",
-            ExpressionAttributeNames={"#s": "status"},
+            UpdateExpression="SET #s = :s, extracted_text = :t, #l = :l, completed_at = :c",
+            ExpressionAttributeNames={"#s": "status", "#l": "lines"},
             ExpressionAttributeValues={
                 ":s": "complete",
                 ":t": text,
