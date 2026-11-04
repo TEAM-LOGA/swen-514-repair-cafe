@@ -101,6 +101,13 @@ resource "aws_iam_role_policy" "backend" {
         }
       },
       {
+        # SNS does not support resource-level scoping for this action.
+        Sid      = "FilterRequesterSubscription"
+        Effect   = "Allow"
+        Action   = "sns:SetSubscriptionAttributes"
+        Resource = "*"
+      },
+      {
         # These Textract operations do not support resource-level IAM scoping.
         Sid    = "ExtractDocumentText"
         Effect = "Allow"
