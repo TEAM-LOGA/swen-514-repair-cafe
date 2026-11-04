@@ -18,13 +18,6 @@ variable "admin_email" {
   default     = ""
 }
 
-resource "aws_sns_topic_subscription" "admin" {
-  count     = var.admin_email == "" ? 0 : 1
-  topic_arn = aws_sns_topic.repair_status.arn
-  protocol  = "email"
-  endpoint  = var.admin_email
-}
-
 resource "aws_sns_topic" "admin_requests" {
   count = var.admin_email == "" ? 0 : 1
   name  = "${var.name_prefix}-admin-requests"

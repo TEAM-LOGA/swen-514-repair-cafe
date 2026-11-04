@@ -145,6 +145,7 @@ def _update_status_and_notify(user_id, request_id, status):
         ExpressionAttributeValues={":status": status, ":old_status": old_status, ":updated_at": now},
     )
     try:
+        sign_in_url = os.environ["FRONTEND_WEBSITE_URL"]
         sns.publish(
             TopicArn=topic_arn,
             Subject="Repair Cafe update available",
@@ -152,12 +153,25 @@ def _update_status_and_notify(user_id, request_id, status):
             # consistent, so a new subscription must never receive request data.
             Message=(
                 "A repair request you follow has an update. Sign in to Repair Cafe to view it."
-                f"\n\n{os.environ['FRONTEND_WEBSITE_URL']}"
+                f"\n\n{sign_in_url}"
             ),
             MessageAttributes={
                 "requester_id": {"DataType": "String", "StringValue": request["requester_id"]}
             },
         )
+        admin_topic_arn = os.environ.get("ADMIN_REQUESTS_TOPIC_ARN")
+        if admin_topic_arn:
+            sns.publish(
+                TopicArn=admin_topic_arn,
+                Subject="Repair Cafe update available",
+                Message=(
+                    "A repair request you follow has an update. Sign in to Repair Cafe to view it.\n\n"
+                    f"Item: {request['item_name']}\n"
+                    f"Previous status: {old_status}\n"
+                    f"New status: {status}\n\n"
+                    f"{sign_in_url}"
+                ),
+            )
     except Exception as error:
         LOGGER.error("SNS status notification failed: %s", type(error).__name__)
         return _response(502, {"error": "Status was updated, but its notification could not be sent."})
