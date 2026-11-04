@@ -6,6 +6,28 @@ const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_ATTEMPTS = 20; // ~1 minute total
 
+async function prepareCameraPhoto(file) {
+  if (file.type === "image/jpeg" && file.size <= MAX_FILE_BYTES) return file;
+
+  const url = URL.createObjectURL(file);
+  try {
+    const image = new Image();
+    image.src = url;
+    await image.decode();
+
+    const scale = Math.min(1, 4096 / Math.max(image.naturalWidth, image.naturalHeight));
+    const canvas = document.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(image.naturalWidth * scale));
+    canvas.height = Math.max(1, Math.round(image.naturalHeight * scale));
+    canvas.getContext("2d").drawImage(image, 0, 0, canvas.width, canvas.height);
+    const jpeg = await new Promise((resolve) => canvas.toBlob(resolve, "image/jpeg", 0.85));
+    if (!jpeg) throw new Error("Could not encode photo.");
+    return new File([jpeg], `${file.name.replace(/\.[^.]+$/, "") || "photo"}.jpg`, { type: jpeg.type });
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
 export default function RepairRequests({ config }) {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -16,7 +38,9 @@ export default function RepairRequests({ config }) {
 
   // File upload state
   const [files, setFiles] = useState([]); // [{ file, status, error }]
-  const fileInputRef = useRef(null);
+  const cameraInputRef = useRef(null);
+  const [preparingPhoto, setPreparingPhoto] = useState(false);
+  const [cameraError, setCameraError] = useState("");
 
   // Per-request extraction results: { [request_id]: { status, text, error } }
   const [extractions, setExtractions] = useState({});
@@ -42,8 +66,7 @@ export default function RepairRequests({ config }) {
     };
   }, []);
 
-  function handleFileChange(event) {
-    const selected = Array.from(event.target.files);
+  function queueFiles(selected) {
     const validated = selected.map((file) => {
       if (!ALLOWED_TYPES.includes(file.type)) {
         return { file, status: "error", error: `Unsupported type: ${file.type || "unknown"}` };
@@ -54,7 +77,27 @@ export default function RepairRequests({ config }) {
       return { file, status: "ready", error: null };
     });
     setFiles((prev) => [...prev, ...validated]);
+  }
+
+  function handleFileChange(event) {
+    queueFiles(Array.from(event.target.files));
     event.target.value = "";
+  }
+
+  async function handleCameraChange(event) {
+    const [photo] = event.target.files;
+    event.target.value = "";
+    if (!photo) return;
+
+    setCameraError("");
+    setPreparingPhoto(true);
+    try {
+      queueFiles([await prepareCameraPhoto(photo)]);
+    } catch {
+      setCameraError("Could not prepare the photo. Retake it or choose a JPEG file.");
+    } finally {
+      setPreparingPhoto(false);
+    }
   }
 
   function removeFile(index) {
@@ -212,7 +255,7 @@ export default function RepairRequests({ config }) {
   }
 
   const hasFiles = files.length > 0;
-  const isBusy = loading || saving;
+  const isBusy = loading || saving || preparingPhoto;
 
   return (
     <section aria-labelledby="requests-heading">
@@ -233,11 +276,21 @@ export default function RepairRequests({ config }) {
               type="file"
               multiple
               accept={ALLOWED_TYPES.join(",")}
-              ref={fileInputRef}
               onChange={handleFileChange}
               disabled={isBusy}
             />
+            <button type="button" onClick={() => cameraInputRef.current.click()}>Take photo</button>
+            <input
+              type="file"
+              accept="image/*"
+              capture="environment"
+              ref={cameraInputRef}
+              onChange={handleCameraChange}
+              hidden
+            />
           </p>
+          {preparingPhoto && <p role="status">Preparing photo…</p>}
+          {cameraError && <p role="alert">{cameraError}</p>}
 
           {hasFiles && (
             <ul aria-label="Selected files">
