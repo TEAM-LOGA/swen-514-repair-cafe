@@ -83,6 +83,10 @@ module "lambda_function" {
   }
 }
 
+module "textract_lambda" {
+  source = "./modules/textract_lambda"
+}
+
 module "api" {
   source = "./modules/api"
 
@@ -93,3 +97,4 @@ module "api" {
   cognito_client_id    = module.auth.client_id
   allowed_origins      = [module.frontend.website_url]
 }
+
