@@ -50,6 +50,12 @@ resource "aws_cognito_user_pool" "users" {
   }
 }
 
+resource "aws_cognito_user_group" "admins" {
+  name         = "Admins"
+  user_pool_id = aws_cognito_user_pool.users.id
+  description  = "Approved Repair Cafe application administrators"
+}
+
 resource "aws_cognito_user_pool_client" "frontend" {
   name         = "${var.name_prefix}-frontend"
   user_pool_id = aws_cognito_user_pool.users.id

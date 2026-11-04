@@ -49,6 +49,12 @@ variable "lambda_handler" {
   nullable    = false
 }
 
+variable "admin_email" {
+  description = "Optional approved Cognito user and recipient of all repair notifications."
+  type        = string
+  default     = ""
+}
+
 variable "bedrock_model_arn" {
   description = "Bedrock model or system inference-profile ARN in aws_region. Use the US Sonnet 4.6 inference profile for the deploying AWS account."
   type        = string

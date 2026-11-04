@@ -3,6 +3,10 @@ name: Repair Cafe terraform_apply and terraform_destroy
 on:
   workflow_dispatch:
     inputs:
+      admin_email:
+        description: Existing demo account to grant admin membership and subscribe to notifications
+        type: string
+        required: false
       action:
         description: Action to perform
         required: true
@@ -47,6 +51,7 @@ jobs:
       # GitHub environments select AWS accounts; Terraform's environment stays dev.
       TF_VAR_environment: dev
       TF_VAR_bedrock_model_arn: ${{ vars.BEDROCK_MODEL_ARN }}
+      TF_VAR_admin_email: ${{ inputs.admin_email }}
 
     steps:
       - name: Checkout repository
@@ -168,6 +173,14 @@ jobs:
         run: |
           export COGNITO_POOL_ID="$(terraform output -raw cognito_user_pool_id)"
           python3 ../scripts/seed_cognito_users.py
+
+      - name: Assign approved administrator
+        if: inputs.action == 'terraform_apply' && inputs.admin_email != ''
+        run: |
+          aws cognito-idp admin-add-user-to-group \
+            --user-pool-id "$(terraform output -raw cognito_user_pool_id)" \
+            --username "$TF_VAR_admin_email" \
+            --group-name Admins
 
       - name: Seed sample repair requests
         if: inputs.action == 'terraform_apply'

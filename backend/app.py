@@ -264,6 +264,18 @@ def _create_request(event, requester_id):
     except Exception as error:
         LOGGER.error("Repair request write failed: %s", type(error).__name__)
         return _response(500, {"error": "Unable to save the repair request."})
+    topic_arn = os.environ.get("NOTIFICATIONS_TOPIC_ARN")
+    if topic_arn:
+        try:
+            sns, _ = _aws_clients()
+            sns.publish(
+                TopicArn=topic_arn,
+                Subject="New Repair Cafe request",
+                Message="A new repair request was submitted to Repair Cafe.",
+            )
+        except Exception as error:
+            # The request is already saved. Preserve success so clients do not create duplicates.
+            LOGGER.error("SNS new request notification failed: %s", type(error).__name__)
     return _response(201, request)
 
 
@@ -532,6 +544,14 @@ def _store_extraction_failure(event):
 
 
 # decides what to do with each event
+def _is_admin(claims):
+    groups = claims.get("cognito:groups", [])
+    if isinstance(groups, str):
+        # API Gateway can serialize the array claim as a bracketed list.
+        groups = [group.strip().strip('"') for group in groups.strip("[]").split(",")]
+    return isinstance(groups, list) and "Admins" in groups
+
+
 def lambda_handler(event, context):
     if not isinstance(event, dict):
         return _response(400, {"error": "The event must be a JSON object."})
@@ -550,6 +570,7 @@ def lambda_handler(event, context):
             return _response(200, {
                 "message": "Repair Cafe backend is running.",
                 "user_id": user_id,
+                "is_admin": _is_admin(claims),
             })
 
         if route == "POST /me/notifications":

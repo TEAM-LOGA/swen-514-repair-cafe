@@ -61,6 +61,7 @@ module "notifications" {
   source = "./modules/notifications"
 
   name_prefix = local.name_prefix
+  admin_email = var.admin_email
 }
 
 module "textract_lambda" {
