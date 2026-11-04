@@ -67,3 +67,9 @@ variable "environment_variables" {
   type        = map(string)
   nullable    = false
 }
+
+variable "extraction_state_machine_arn" {
+  description = "Step Functions state machine ARN the backend may start for file extraction."
+  type        = string
+  nullable    = false
+}

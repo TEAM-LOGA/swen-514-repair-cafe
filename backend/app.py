@@ -3,6 +3,7 @@
 import json
 import logging
 import os
+import urllib.parse
 from datetime import datetime, timezone
 from functools import lru_cache
 from uuid import uuid4
@@ -114,10 +115,21 @@ def _requests_table():
 
 
 @lru_cache(maxsize=1)
+def _records_table():
+    import boto3
+    return boto3.resource("dynamodb").Table(os.environ["RECORDS_TABLE_NAME"])
+
+
+@lru_cache(maxsize=1)
 def _s3_client():
     import boto3
-
     return boto3.client("s3")
+
+
+@lru_cache(maxsize=1)
+def _sfn_client():
+    import boto3
+    return boto3.client("stepfunctions")
 
 
 def _create_request(event, requester_id):
@@ -236,6 +248,186 @@ def _create_upload_url(event, requester_id, path_params):
     })
 
 
+def _start_extraction(event, requester_id, path_params):
+    """
+    Start a Step Functions extraction workflow for an uploaded file.
+    The workflow calls the Textract Lambda, then stores the result as an AI# record.
+    """
+    request_id = path_params.get("request_id", "")
+    if not request_id:
+        return _response(400, {"error": "Missing request_id."})
+
+    # Verify ownership.
+    try:
+        item = _requests_table().get_item(
+            Key={"request_id": request_id},
+            ProjectionExpression="requester_id",
+        ).get("Item")
+    except Exception as error:
+        LOGGER.error("Request ownership check failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to verify repair request ownership."})
+
+    if not item:
+        return _response(404, {"error": "Repair request not found."})
+    if item.get("requester_id") != requester_id:
+        return _response(403, {"error": "You do not own this repair request."})
+
+    try:
+        body = json.loads(event.get("body") or "")
+    except (TypeError, ValueError):
+        return _response(400, {"error": "Send a JSON object with file_id."})
+    if not isinstance(body, dict):
+        return _response(400, {"error": "Send a JSON object with file_id."})
+
+    file_id = body.get("file_id", "")
+    if not file_id:
+        return _response(400, {"error": "file_id is required."})
+
+    bucket = os.environ.get("UPLOADS_BUCKET_NAME")
+    state_machine_arn = os.environ.get("EXTRACTION_STATE_MACHINE_ARN")
+    if not bucket or not state_machine_arn:
+        return _response(500, {"error": "Extraction pipeline is not configured."})
+
+    s3_key = f"requests/{request_id}/uploads/{file_id}"
+
+    # Write a pending AI# record to DynamoDB before starting the workflow
+    # so the frontend can poll immediately.
+    record_key = f"AI#{datetime.now(timezone.utc).isoformat(timespec='microseconds')}#{file_id}"
+    try:
+        _records_table().put_item(Item={
+            "request_id": request_id,
+            "record_key": record_key,
+            "file_id": file_id,
+            "status": "processing",
+            "created_at": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+        })
+    except Exception as error:
+        LOGGER.error("Pending extraction record write failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to create extraction record."})
+
+    # Start the Step Functions workflow.
+    try:
+        _sfn_client().start_execution(
+            stateMachineArn=state_machine_arn,
+            input=json.dumps({
+                "request_id": request_id,
+                "file_id": file_id,
+                "bucket": bucket,
+                "key": s3_key,
+                "record_key": record_key,
+            }),
+        )
+    except Exception as error:
+        LOGGER.error("Step Functions start_execution failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to start extraction workflow."})
+
+    return _response(202, {
+        "result_id": record_key,
+        "status": "processing",
+        "message": "Extraction started. Poll GET /requests/{request_id}/ai-results/{result_id} for status.",
+    })
+
+
+def _get_ai_result(requester_id, path_params):
+    """Return a stored AI extraction result for a request."""
+    request_id = path_params.get("request_id", "")
+    raw_result_id = path_params.get("result_id", "")
+    result_id = urllib.parse.unquote(raw_result_id)
+    if not request_id or not result_id:
+        return _response(400, {"error": "Missing request_id or result_id."})
+
+    # Verify ownership via the parent request.
+    try:
+        req_item = _requests_table().get_item(
+            Key={"request_id": request_id},
+            ProjectionExpression="requester_id",
+        ).get("Item")
+    except Exception as error:
+        LOGGER.error("Request ownership check failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to verify request ownership."})
+
+    if not req_item:
+        return _response(404, {"error": "Repair request not found."})
+    if req_item.get("requester_id") != requester_id:
+        return _response(403, {"error": "You do not own this repair request."})
+
+    try:
+        record = _records_table().get_item(
+            Key={"request_id": request_id, "record_key": result_id},
+        ).get("Item")
+    except Exception as error:
+        LOGGER.error("AI result read failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to load extraction result."})
+
+    if not record:
+        return _response(404, {"error": "Extraction result not found."})
+
+    return _response(200, record)
+
+
+def _store_extraction(event):
+    """
+    Called directly by Step Functions (not through API Gateway) to persist
+    the Textract result as an AI# record in the records table.
+    Input: { action, request_id, file_id, text, lines, record_key }
+    """
+    request_id = event.get("request_id")
+    file_id = event.get("file_id")
+    text = event.get("text", "")
+    lines = event.get("lines", [])
+    record_key = event.get("record_key")
+
+    if not request_id or not file_id or not record_key:
+        raise ValueError("store_extraction requires request_id, file_id, and record_key.")
+
+    try:
+        _records_table().update_item(
+            Key={"request_id": request_id, "record_key": record_key},
+            UpdateExpression="SET #s = :s, extracted_text = :t, lines = :l, completed_at = :c",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":s": "complete",
+                ":t": text,
+                ":l": lines,
+                ":c": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+            },
+        )
+    except Exception as error:
+        LOGGER.error("Extraction result write failed: %s", type(error).__name__)
+        raise
+
+    return {"status": "stored", "request_id": request_id, "record_key": record_key}
+
+
+def _store_extraction_failure(event):
+    """
+    Called directly by Step Functions on extraction pipeline failure.
+    Input: { action, request_id, file_id, record_key }
+    """
+    request_id = event.get("request_id")
+    file_id = event.get("file_id")
+    record_key = event.get("record_key")
+
+    if not request_id or not file_id or not record_key:
+        raise ValueError("store_extraction_failure requires request_id, file_id, and record_key.")
+
+    try:
+        _records_table().update_item(
+            Key={"request_id": request_id, "record_key": record_key},
+            UpdateExpression="SET #s = :s, completed_at = :c",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":s": "failed",
+                ":c": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+            },
+        )
+    except Exception as error:
+        LOGGER.error("Extraction failure record write failed: %s", type(error).__name__)
+        raise
+
+    return {"status": "failure_recorded", "request_id": request_id}
+
+
 # decides what to do with each event
 def lambda_handler(event, context):
     if not isinstance(event, dict):
@@ -261,8 +453,13 @@ def lambda_handler(event, context):
             return _list_requests(claims["sub"])
         if route == "POST /requests/{request_id}/uploads":
             return _create_upload_url(event, claims["sub"], path_params)
+        if route == "POST /requests/{request_id}/extractions":
+            return _start_extraction(event, claims["sub"], path_params)
+        if route == "GET /requests/{request_id}/ai-results/{result_id}":
+            return _get_ai_result(claims["sub"], path_params)
         return _response(501, {"error": "This repair workflow route is not implemented yet."})
 
+    # Direct invocations (from Step Functions, not API Gateway).
     action = event.get("action", "health")
     if action == "health":
         return _response(200, {"status": "ok", "message": "Repair Cafe backend is running."})
@@ -272,4 +469,9 @@ def lambda_handler(event, context):
         except ValueError as error:
             return _response(400, {"error": str(error)})
         return _summarize(source)
+    if action == "store_extraction":
+        # Called by Step Functions — raises on error so the state machine catches it.
+        return _store_extraction(event)
+    if action == "store_extraction_failure":
+        return _store_extraction_failure(event)
     return _response(400, {"error": "Supported demo actions are health and summarize."})

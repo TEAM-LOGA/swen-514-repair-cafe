@@ -6,41 +6,39 @@ textract = boto3.client("textract")
 
 
 def lambda_handler(event, context):
-    try:
-        raw_body = event.get("body", event)
-        body = json.loads(raw_body) if isinstance(raw_body, str) else (raw_body or {})
+    raw_body = event.get("body", event)
+    body = json.loads(raw_body) if isinstance(raw_body, str) else (raw_body or {})
 
-        file_b64 = body.get("file")
-        if not file_b64:
-            return _response(400, {"error": "Missing required 'file' field in JSON body."})
+    # --- S3Object mode (called from Step Functions) ---
+    # Input: { "bucket": "...", "key": "requests/..." }
+    bucket = body.get("bucket")
+    key = body.get("key")
+    if bucket and key:
+        tex_response = textract.detect_document_text(
+            Document={"S3Object": {"Bucket": bucket, "Name": key}}
+        )
 
-        file_bytes = base64.b64decode(file_b64.split(",")[-1])
-
+    # --- Bytes mode (legacy / test invocation with base64) ---
+    # Input: { "file": "<base64>" }
+    elif body.get("file"):
+        file_bytes = base64.b64decode(body["file"].split(",")[-1])
         tex_response = textract.detect_document_text(
             Document={"Bytes": file_bytes}
         )
 
-        lines = [
-            block["Text"]
-            for block in tex_response.get("Blocks", [])
-            if block["BlockType"] == "LINE"
-        ]
+    else:
+        raise ValueError("Provide either {bucket, key} for S3 mode or {file} for base64 mode.")
 
-        return _response(
-            200,
-            {
-                "text": "\n".join(lines),
-                "lines": lines,
-            },
-        )
+    lines = [
+        block["Text"]
+        for block in tex_response.get("Blocks", [])
+        if block["BlockType"] == "LINE"
+    ]
 
-    except Exception as e:
-        return _response(500, {"error": str(e)})
-
-
-def _response(status_code, payload):
+    # Return top-level fields so Step Functions ResultSelector ($.Payload.text, $.Payload.lines)
+    # can extract them directly without having to parse stringified JSON body.
     return {
-        "statusCode": status_code,
-        "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(payload),
+        "statusCode": 200,
+        "text": "\n".join(lines),
+        "lines": lines,
     }

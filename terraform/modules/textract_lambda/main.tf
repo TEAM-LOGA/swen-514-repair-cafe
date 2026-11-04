@@ -36,6 +36,22 @@ resource "aws_iam_role_policy" "textract_only" {
   })
 }
 
+# Grant the Textract Lambda read access to uploaded files in S3
+resource "aws_iam_role_policy" "textract_s3_read" {
+  name = "textract-document-reader-s3-read"
+  role = aws_iam_role.textract_lambda_role.id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [{
+      Sid      = "ReadUploadedFiles"
+      Effect   = "Allow"
+      Action   = "s3:GetObject"
+      Resource = "${var.uploads_bucket_arn}/*"
+    }]
+  })
+}
+
 resource "aws_lambda_function" "textract" {
   function_name    = "textract-document-reader"
   role             = aws_iam_role.textract_lambda_role.arn

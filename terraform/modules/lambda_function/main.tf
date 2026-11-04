@@ -1,4 +1,4 @@
-terraform {
+﻿terraform {
   required_providers {
     aws = {
       source = "hashicorp/aws"
@@ -116,6 +116,12 @@ resource "aws_iam_role_policy" "backend" {
         Effect   = "Allow"
         Action   = "bedrock:InvokeModel"
         Resource = local.bedrock_resource_arns
+      },
+      {
+        Sid      = "StartExtractionWorkflow"
+        Effect   = "Allow"
+        Action   = "states:StartExecution"
+        Resource = var.extraction_state_machine_arn
       }
     ]
   })
