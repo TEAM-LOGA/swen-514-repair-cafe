@@ -5,6 +5,49 @@ const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "ap
 const MAX_FILE_BYTES = 10 * 1024 * 1024; // 10 MB
 const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_ATTEMPTS = 20; // ~1 minute total
+const REQUEST_STATUSES = ["Submitted", "In Progress", "Completed", "Unresolved"];
+
+function RequestStatusForm({ config, request, onStatusChange }) {
+  const [status, setStatus] = useState(request.status);
+  const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState("");
+
+  async function updateStatus(event) {
+    event.preventDefault();
+    setUpdating(true);
+    setError("");
+    try {
+      const result = await apiRequest(
+        config,
+        `/requests/${encodeURIComponent(request.request_id)}/status`,
+        { method: "PATCH", body: { status } },
+      );
+      onStatusChange(request.request_id, result.status);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  return (
+    <form onSubmit={updateStatus}>
+      <fieldset disabled={updating}>
+        <legend>Update status for {request.item_name}</legend>
+        <label>
+          Status{" "}
+          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+            {REQUEST_STATUSES.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </label>{" "}
+        <button type="submit" disabled={status === request.status}>
+          {updating ? "Updating…" : "Update status"}
+        </button>
+      </fieldset>
+      {error && <p role="alert">{error}</p>}
+    </form>
+  );
+}
 
 async function prepareCameraPhoto(file) {
   if (file.type === "image/jpeg" && file.size <= MAX_FILE_BYTES) return file;
@@ -257,6 +300,12 @@ export default function RepairRequests({ config }) {
   const hasFiles = files.length > 0;
   const isBusy = loading || saving || preparingPhoto;
 
+  function applyRequestStatus(requestId, status) {
+    setRequests((previous) => previous.map((request) =>
+      request.request_id === requestId ? { ...request, status } : request
+    ));
+  }
+
   return (
     <section aria-labelledby="requests-heading">
       <h3 id="requests-heading">My repair requests</h3>
@@ -333,6 +382,7 @@ export default function RepairRequests({ config }) {
               <li key={request.request_id}>
                 <strong>{request.item_name}</strong> — {request.status}
                 <p>{request.description}</p>
+                <RequestStatusForm config={config} request={request} onStatusChange={applyRequestStatus} />
                 {extraction && (
                   <div aria-live="polite">
                     {extraction.status === "processing" && (
