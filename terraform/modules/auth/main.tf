@@ -56,6 +56,12 @@ resource "aws_cognito_user_group" "admins" {
   description  = "Approved Repair Cafe application administrators"
 }
 
+resource "aws_cognito_user_group" "volunteers" {
+  name         = "Volunteers"
+  user_pool_id = aws_cognito_user_pool.users.id
+  description  = "Approved Repair Cafe volunteers"
+}
+
 resource "aws_cognito_user_pool_client" "frontend" {
   name         = "${var.name_prefix}-frontend"
   user_pool_id = aws_cognito_user_pool.users.id
@@ -70,7 +76,7 @@ resource "aws_cognito_user_pool_client" "frontend" {
   prevent_user_existence_errors = "ENABLED"
   enable_token_revocation       = true
 
-  # Profiles and requester/volunteer types are stored in DynamoDB.
+  # Volunteer access is granted through Cognito group membership.
   read_attributes  = ["email", "email_verified", "sub"]
   write_attributes = ["email"]
 

@@ -1,4 +1,5 @@
 import RepairRequests from "./RepairRequests.jsx";
+import VolunteerRequests from "./VolunteerRequests.jsx";
 import { useEffect, useState } from "react";
 import { getCurrentUser, signIn, signOut } from "aws-amplify/auth";
 import { configureAuth, fetchProfile } from "./auth.js";
@@ -55,7 +56,6 @@ export default function App() {
   // API errors are separate because a user can be signed in even if the API fails
   async function checkBackend() {
     setApiError("");
-    setProfile(null);
     try {
       setProfile(await fetchProfile(config));
     } catch (requestError) {
@@ -136,7 +136,9 @@ export default function App() {
             setBusy(true);
             try { await checkBackend(); } finally { setBusy(false); }
           }}>Check backend connection</button>
-          <RepairRequests key={user.userId} config={config} />
+          {!profile && !apiError && <p role="status">Loading your workspace…</p>}
+          {profile?.is_volunteer === true && <VolunteerRequests key={user.userId} config={config} />}
+          {profile?.is_volunteer === false && <RepairRequests key={user.userId} config={config} />}
         </section>
       ) : (
         <form onSubmit={handleLogin} aria-labelledby="login-heading">
