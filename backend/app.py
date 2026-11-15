@@ -134,15 +134,17 @@ def _update_status_and_notify(user_id, request_id, status):
         return _response(403, {"error": "You are not a participant in this repair request."})
 
     old_status = request.get("status")
+    if status == "Submitted" and request.get("volunteer_id"):
+        return _response(409, {"error": "The assigned volunteer must release this request to return it to Submitted."})
     if old_status == status:
         return _response(200, {"request_id": request_id, "status": status, "notification": "not_needed"})
     now = datetime.now(timezone.utc).isoformat()
     table.update_item(
         Key={"request_id": request_id},
         UpdateExpression="SET #status = :status, updated_at = :updated_at",
-        ConditionExpression="#status = :old_status",
+        ConditionExpression="#status = :old_status AND (requester_id = :actor OR volunteer_id = :actor)",
         ExpressionAttributeNames={"#status": "status"},
-        ExpressionAttributeValues={":status": status, ":old_status": old_status, ":updated_at": now},
+        ExpressionAttributeValues={":status": status, ":old_status": old_status, ":updated_at": now, ":actor": user_id},
     )
     try:
         sign_in_url = os.environ["FRONTEND_WEBSITE_URL"]
@@ -621,7 +623,40 @@ def lambda_handler(event, context):
         if route == "POST /requests":
             return _create_request(event, user_id)
         if route == "GET /requests":
-            return _list_requests(user_id)
+            params = event.get("queryStringParameters") or {}
+            view = params.get("view", "mine")
+            if view == "mine":
+                return _list_requests(user_id)
+            if view not in {"available", "assigned"}:
+                return _response(400, {"error": "Unknown request view."})
+            try:
+                from repair_work import list_work
+                return _response(200, list_work(user_id, view, params, _requests_table()))
+            except ValueError as error:
+                return _response(400, {"error": str(error)})
+            except Exception as error:
+                LOGGER.error("Volunteer queue failed: %s", type(error).__name__)
+                return _response(500, {"error": "Unable to load volunteer requests."})
+        if route in {
+            "POST /requests/{request_id}/claim", "DELETE /requests/{request_id}/claim",
+            "GET /requests/{request_id}/notes", "POST /requests/{request_id}/notes",
+        }:
+            request_id = path_params.get("request_id")
+            if not isinstance(request_id, str) or not request_id:
+                return _response(400, {"error": "A request ID is required."})
+            try:
+                from repair_work import claim_request, notes
+                if route.endswith("/claim"):
+                    status, result = claim_request(user_id, request_id, _requests_table(), release=route.startswith("DELETE"))
+                else:
+                    body = _request_body(event) if route.startswith("POST") else None
+                    status, result = notes(user_id, request_id, _requests_table(), _records_table(), body)
+                return _response(status, result)
+            except ValueError as error:
+                return _response(400, {"error": str(error)})
+            except Exception as error:
+                LOGGER.error("Repair work operation failed: %s", type(error).__name__)
+                return _response(500, {"error": "Unable to update repair work. Please retry."})
         if route == "POST /requests/{request_id}/uploads":
             return _create_upload_url(event, user_id, path_params)
         if route == "POST /requests/{request_id}/extractions":

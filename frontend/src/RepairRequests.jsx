@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import RepairNotes from "./RepairNotes.jsx";
 import { apiRequest } from "./auth.js";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
@@ -7,7 +8,7 @@ const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_ATTEMPTS = 20; // ~1 minute total
 const REQUEST_STATUSES = ["Submitted", "In Progress", "Completed", "Unresolved"];
 
-function RequestStatusForm({ config, request, onStatusChange }) {
+export function RequestStatusForm({ config, request, onStatusChange }) {
   const [status, setStatus] = useState(request.status);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
@@ -37,6 +38,7 @@ function RequestStatusForm({ config, request, onStatusChange }) {
         <label>
           Status{" "}
           <select value={status} onChange={(event) => setStatus(event.target.value)}>
+            {request.status === "Claimed" && <option disabled>Claimed</option>}
             {REQUEST_STATUSES.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>{" "}
@@ -383,6 +385,7 @@ export default function RepairRequests({ config }) {
                 <strong>{request.item_name}</strong> — {request.status}
                 <p>{request.description}</p>
                 <RequestStatusForm config={config} request={request} onStatusChange={applyRequestStatus} />
+                <RepairNotes config={config} request={request} />
                 {extraction && (
                   <div aria-live="polite">
                     {extraction.status === "processing" && (
