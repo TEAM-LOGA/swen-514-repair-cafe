@@ -1,4 +1,3 @@
-import VolunteerWork from "./VolunteerWork.jsx";
 import RepairRequests from "./RepairRequests.jsx";
 import { useEffect, useState } from "react";
 import { getCurrentUser, signIn, signOut } from "aws-amplify/auth";
@@ -138,7 +137,6 @@ export default function App() {
             try { await checkBackend(); } finally { setBusy(false); }
           }}>Check backend connection</button>
           <RepairRequests key={user.userId} config={config} />
-          <VolunteerWork key={user.userId + "-volunteer"} config={config} />
         </section>
       ) : (
         <form onSubmit={handleLogin} aria-labelledby="login-heading">

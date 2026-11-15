@@ -8,7 +8,7 @@ const POLL_INTERVAL_MS = 3000;
 const POLL_MAX_ATTEMPTS = 20; // ~1 minute total
 const REQUEST_STATUSES = ["Submitted", "In Progress", "Completed", "Unresolved"];
 
-export function RequestStatusForm({ config, request, onStatusChange }) {
+function RequestStatusForm({ config, request, onStatusChange }) {
   const [status, setStatus] = useState(request.status);
   const [updating, setUpdating] = useState(false);
   const [error, setError] = useState("");
@@ -38,7 +38,6 @@ export function RequestStatusForm({ config, request, onStatusChange }) {
         <label>
           Status{" "}
           <select value={status} onChange={(event) => setStatus(event.target.value)}>
-            {request.status === "Claimed" && <option disabled>Claimed</option>}
             {REQUEST_STATUSES.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>{" "}
