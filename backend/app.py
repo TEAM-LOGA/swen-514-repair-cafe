@@ -828,6 +828,25 @@ def lambda_handler(event, context):
                 "is_volunteer": is_volunteer,
             })
 
+        if route == "GET /repair-history" or route in {
+            "GET /requests/{request_id}/history", "POST /requests/{request_id}/confirmation",
+        }:
+            try:
+                from repair_history import search_history, request_history
+                if route == "GET /repair-history":
+                    return _response(200, search_history(user_id, is_volunteer, event.get("queryStringParameters") or {}, _requests_table()))
+                request_id = path_params.get("request_id")
+                if not isinstance(request_id, str) or not request_id:
+                    return _response(400, {"error": "A request ID is required."})
+                body = _request_body(event) if route.startswith("POST") else None
+                status, result = request_history(user_id, request_id, _requests_table(), body)
+                return _response(status, result)
+            except ValueError as error:
+                return _response(400, {"error": str(error)})
+            except Exception as error:
+                LOGGER.error("Repair history operation failed: %s", type(error).__name__)
+                return _response(500, {"error": "Unable to load or confirm repair history."})
+
         if route == "POST /me/notifications":
             try:
                 body = _request_body(event)
@@ -888,6 +907,8 @@ def lambda_handler(event, context):
         if route == "POST /requests":
             return _create_request(event, user_id)
         if route in {"GET /requests/{request_id}/notes", "POST /requests/{request_id}/notes"}:
+            if route.startswith("POST") and not is_volunteer:
+                return _response(403, {"error": "Only assigned volunteers can record repair work."})
             request_id = path_params.get("request_id")
             if not isinstance(request_id, str) or not request_id:
                 return _response(400, {"error": "A request ID is required."})

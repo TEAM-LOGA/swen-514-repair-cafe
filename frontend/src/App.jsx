@@ -1,3 +1,4 @@
+import RepairHistory from "./RepairHistory.jsx";
 import RepairRequests from "./RepairRequests.jsx";
 import VolunteerRequests from "./VolunteerRequests.jsx";
 import { useEffect, useState } from "react";
@@ -139,6 +140,7 @@ export default function App() {
           {!profile && !apiError && <p role="status">Loading your workspace…</p>}
           {profile?.is_volunteer === true && <VolunteerRequests key={user.userId} config={config} />}
           {profile?.is_volunteer === false && <RepairRequests key={user.userId} config={config} />}
+          {profile && <RepairHistory key={user.userId + "-history"} config={config} isVolunteer={profile.is_volunteer} />}
         </section>
       ) : (
         <form onSubmit={handleLogin} aria-labelledby="login-heading">

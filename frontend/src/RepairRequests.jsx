@@ -1,3 +1,4 @@
+import OutcomeConfirmation from "./OutcomeConfirmation.jsx";
 import { useEffect, useRef, useState } from "react";
 import RepairNotes from "./RepairNotes.jsx";
 import { apiRequest } from "./auth.js";
@@ -385,6 +386,7 @@ export default function RepairRequests({ config }) {
                 <p>{request.description}</p>
                 <RequestStatusForm config={config} request={request} onStatusChange={applyRequestStatus} />
                 <RepairNotes config={config} request={request} />
+                <OutcomeConfirmation config={config} request={request} canConfirm />
                 {extraction && (
                   <div aria-live="polite">
                     {extraction.status === "processing" && (

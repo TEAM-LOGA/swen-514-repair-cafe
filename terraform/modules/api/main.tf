@@ -14,6 +14,7 @@ locals {
     "POST /me/notifications",
     # Query parameters support browsing/filtering current and completed requests.
     "GET /requests",
+    "GET /repair-history",
     "POST /requests",
     "GET /requests/{request_id}",
     "POST /requests/{request_id}/claim",
