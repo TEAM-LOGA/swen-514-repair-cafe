@@ -8,3 +8,9 @@ variable "name_prefix" {
     error_message = "Use 2-30 lowercase letters, digits, or hyphens; start with a letter and end with a letter or digit."
   }
 }
+
+variable "enable_volunteer_demo" {
+  description = "Create the requester and two volunteers for the volunteer workflow demo."
+  type        = bool
+  nullable    = false
+}

@@ -7,6 +7,10 @@ on:
         description: Existing demo account to grant admin membership and subscribe to notifications
         type: string
         required: false
+      volunteer_demo:
+        description: Provision a synthetic requester and two volunteers through Terraform
+        type: boolean
+        default: false
       action:
         description: Action to perform
         required: true
@@ -52,6 +56,7 @@ jobs:
       TF_VAR_environment: dev
       TF_VAR_bedrock_model_arn: ${{ vars.BEDROCK_MODEL_ARN }}
       TF_VAR_admin_email: ${{ inputs.admin_email }}
+      TF_VAR_enable_volunteer_demo: ${{ inputs.volunteer_demo }}
 
     steps:
       - name: Checkout repository
@@ -68,6 +73,10 @@ jobs:
             exit 1
           fi
           if [[ "$ACTION" == "terraform_apply" ]]; then
+            if [[ "$TF_VAR_enable_volunteer_demo" == "true" && -n "$TF_VAR_admin_email" ]]; then
+              echo "::error::Leave admin_email empty for a volunteer demo deployment."
+              exit 1
+            fi
             for file in ../backend/app.py ../frontend/index.html ../frontend/error.html; do
               if [[ ! -f "$file" ]]; then
                 echo "::error::Missing $file. Add the application files before running terraform_apply."
@@ -82,7 +91,7 @@ jobs:
           python-version: "3.13"
 
       - name: Validate demo account roster
-        if: inputs.action == 'terraform_apply'
+        if: inputs.action == 'terraform_apply' && !inputs.volunteer_demo
         env:
           DEMO_COGNITO_USERS: ${{ secrets.DEMO_COGNITO_USERS }}
         run: python3 ../scripts/seed_cognito_users.py --validate
@@ -167,7 +176,7 @@ jobs:
         run: terraform apply -lock-timeout=5m "$RUNNER_TEMP/setup.tfplan"
 
       - name: Create confirmed Cognito demo users
-        if: inputs.action == 'terraform_apply'
+        if: inputs.action == 'terraform_apply' && !inputs.volunteer_demo
         env:
           DEMO_COGNITO_USERS: ${{ secrets.DEMO_COGNITO_USERS }}
         run: |
@@ -183,7 +192,7 @@ jobs:
             --group-name Admins
 
       - name: Seed sample repair requests
-        if: inputs.action == 'terraform_apply'
+        if: inputs.action == 'terraform_apply' && !inputs.volunteer_demo
         env:
           DEMO_COGNITO_USERS: ${{ secrets.DEMO_COGNITO_USERS }}
         run: |

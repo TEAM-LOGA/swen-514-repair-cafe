@@ -77,6 +77,32 @@ The workflow builds a Python 3.13 Lambda ZIP, runs Terraform, uploads the fronte
 
 > **Caution:** `terraform_destroy` deletes the application infrastructure. Use it only when you intend to remove that environment.
 
+## Run the optional volunteer demo
+
+Demo mode creates one requester and two volunteers with generated passwords. Use a configured GitHub environment dedicated to testing.
+
+1. Open the [Repair Cafe workflow](https://github.com/TEAM-LOGA/swen-514-repair-cafe/actions/workflows/main.yml) and click **Run workflow**. Select `main`, choose `terraform_apply` and your test environment, check **volunteer_demo**, and leave `admin_email` blank.
+2. When the run succeeds, open the **Website** link in the run’s **Summary**.
+3. In the AWS account and Region used for the deployment, open **Systems Manager → Parameter Store**. Open each parameter below and show its decrypted value to get the account password.
+
+   | Account | Sign-in email | Password parameter |
+   | --- | --- | --- |
+   | Requester | `requester@example.invalid` | `/repair-cafe-dev/volunteer-demo/requester/password` |
+   | Volunteer A | `volunteer-a@example.invalid` | `/repair-cafe-dev/volunteer-demo/volunteer-a/password` |
+   | Volunteer B | `volunteer-b@example.invalid` | `/repair-cafe-dev/volunteer-demo/volunteer-b/password` |
+
+4. Sign in using three separate browser profiles so the accounts stay independent. The requester sees **My repair requests**. Both volunteers see **Volunteer dashboard**.
+
+### Try a repair request
+
+1. As the requester, submit **Cordless Drill** with the description **Intermittent trigger**. Confirm the status is **Submitted**.
+2. In both volunteer profiles, search for `dRiLl`. Leave Volunteer B’s results open.
+3. As Volunteer A, click **Claim**. Confirm the result says **Claimed by you**. Reload the requester page and confirm **In Progress**.
+4. As Volunteer B, click **Claim** on the old result before refreshing. Confirm the conflict message appears and the refreshed result says **Claimed by Volunteer A**.
+5. As Volunteer A, click **Release** under **My claimed requests**. Reload the requester page to confirm **Submitted**. Refresh Volunteer B’s results and confirm **Claim** is available again.
+
+Keep **volunteer_demo** checked when redeploying to keep the demo accounts. To remove the whole test deployment, run the workflow with `terraform_destroy` and select the same GitHub environment. This deletes the demo accounts, their passwords, and the application data in that environment.
+
 ## Local Terraform setup
 
 Copy the example variables file and fill in the deployment values:
@@ -102,6 +128,6 @@ The routes listed in `terraform/modules/api/main.tf` describe planned API surfac
 
 ## Security and deployment notes
 
-- The current Terraform frontend hosting output is an S3 static website URL using HTTP. Set up HTTPS hosting (for example, CloudFront with an appropriate domain and certificate) before using it for real user credentials.
+- The standard deployment uses the HTTP S3 website endpoint. The volunteer demo uses the HTTPS S3 object endpoint for `index.html`.
 - Keep AWS credentials and other secrets in GitHub Actions secrets or an AWS credential provider, never in source control.
 - Review IAM permissions and Terraform plans before deploying changes.

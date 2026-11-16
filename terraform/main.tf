@@ -1,4 +1,6 @@
 terraform {
+  required_version = ">= 1.11.0"
+
   required_providers {
     aws = {
       source  = "hashicorp/aws"
@@ -24,6 +26,10 @@ provider "aws" {
 locals {
   name_prefix = "${var.project_name}-${var.environment}"
 
+  # The HTTPS S3 object endpoint needs an explicit index document.
+  frontend_origin      = var.enable_volunteer_demo ? module.frontend.https_origin : module.frontend.website_url
+  frontend_website_url = var.enable_volunteer_demo ? "${local.frontend_origin}/index.html" : local.frontend_origin
+
   # Construct the backend Lambda ARN from its known naming convention
   backend_lambda_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.name_prefix}-backend"
 }
@@ -42,7 +48,7 @@ module "uploads" {
   source = "./modules/uploads"
 
   name_prefix     = local.name_prefix
-  allowed_origins = [module.frontend.website_url]
+  allowed_origins = [local.frontend_origin]
 }
 
 module "database" {
@@ -54,7 +60,8 @@ module "database" {
 module "auth" {
   source = "./modules/auth"
 
-  name_prefix = local.name_prefix
+  name_prefix           = local.name_prefix
+  enable_volunteer_demo = var.enable_volunteer_demo
 }
 
 module "notifications" {
@@ -86,6 +93,7 @@ module "lambda_function" {
   handler                   = var.lambda_handler
   table_arns                = values(module.database.table_arns)
   request_index_arns        = module.database.request_index_arns
+  user_pool_arn             = module.auth.user_pool_arn
   uploads_bucket_arn        = module.uploads.bucket_arn
   notifications_topic_arn   = module.notifications.topic_arn
   admin_requests_topic_arns = module.notifications.admin_requests_topic_arns
@@ -103,7 +111,7 @@ module "lambda_function" {
     UPLOADS_BUCKET_NAME          = module.uploads.bucket_name
     NOTIFICATIONS_TOPIC_ARN      = module.notifications.topic_arn
     ADMIN_REQUESTS_TOPIC_ARN     = try(module.notifications.admin_requests_topic_arns[0], "")
-    FRONTEND_WEBSITE_URL         = module.frontend.website_url
+    FRONTEND_WEBSITE_URL         = local.frontend_website_url
     COGNITO_USER_POOL_ID         = module.auth.user_pool_id
     COGNITO_CLIENT_ID            = module.auth.client_id
     COGNITO_ISSUER_URL           = module.auth.issuer_url
@@ -119,5 +127,5 @@ module "api" {
   lambda_invoke_arn    = module.lambda_function.invoke_arn
   cognito_issuer_url   = module.auth.issuer_url
   cognito_client_id    = module.auth.client_id
-  allowed_origins      = [module.frontend.website_url]
+  allowed_origins      = [local.frontend_origin]
 }

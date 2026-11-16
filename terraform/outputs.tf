@@ -4,8 +4,8 @@ output "frontend_bucket_name" {
 }
 
 output "frontend_website_url" {
-  description = "HTTP URL of the frontend website after its files are uploaded."
-  value       = module.frontend.website_url
+  description = "URL of the frontend after its files are uploaded."
+  value       = local.frontend_website_url
 }
 
 output "uploads_bucket_name" {

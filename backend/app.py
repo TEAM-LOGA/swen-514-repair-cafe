@@ -1,15 +1,23 @@
 # Initial lambda backened
 
+import base64
+import binascii
 import json
 import logging
 import os
 import re
 import urllib.parse
-from functools import lru_cache
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timezone
+from functools import lru_cache
+from heapq import merge
 from uuid import uuid4
 
 LOGGER = logging.getLogger(__name__)
+
+REQUEST_PAGE_SIZE = 50
+REQUEST_LIST_FIELDS = ("request_id", "item_name", "description", "status", "created_at")
+REQUEST_STATUSES = ("Submitted", "In Progress", "Completed", "Unresolved")
 
 # Max file size allowed for presigned upload URLs (10 MB).
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
@@ -115,39 +123,53 @@ def _subscribe_for_notifications(user_id, email):
     )
 
 
-def _update_status_and_notify(user_id, request_id, status):
-    allowed_statuses = {"Submitted", "In Progress", "Completed", "Unresolved"}
-    if not isinstance(status, str) or status not in allowed_statuses:
+def _update_status_and_notify(user_id, is_volunteer, request_id, status):
+    from boto3.dynamodb.conditions import Attr
+
+    if status not in REQUEST_STATUSES:
         raise ValueError("status must be Submitted, In Progress, Completed, or Unresolved.")
-    requests_table_name = os.environ.get("REQUESTS_TABLE_NAME")
-    topic_arn = os.environ.get("NOTIFICATIONS_TOPIC_ARN")
-    if not requests_table_name or not topic_arn:
+    if not os.environ.get("NOTIFICATIONS_TOPIC_ARN"):
         raise RuntimeError("Notification configuration is missing.")
 
-    sns, dynamodb = _aws_clients()
-    table = dynamodb.Table(requests_table_name)
+    table = _requests_table()
     result = table.get_item(Key={"request_id": request_id}, ConsistentRead=True)
     request = result.get("Item")
     if not request:
         return _response(404, {"error": "Repair request not found."})
-    if user_id not in {request.get("requester_id"), request.get("volunteer_id")}:
+    participant_field = "volunteer_id" if is_volunteer else "requester_id"
+    if request.get(participant_field) != user_id:
         return _response(403, {"error": "You are not a participant in this repair request."})
 
     old_status = request.get("status")
+    condition = Attr("status").eq(old_status) & Attr(participant_field).eq(user_id)
+    if status == "Submitted":
+        if "volunteer_id" in request:
+            return _response(409, {"error": "An assigned repair can only return to Submitted when released."})
+        condition &= Attr("volunteer_id").not_exists()
     if old_status == status:
         return _response(200, {"request_id": request_id, "status": status, "notification": "not_needed"})
-    now = datetime.now(timezone.utc).isoformat()
-    table.update_item(
-        Key={"request_id": request_id},
-        UpdateExpression="SET #status = :status, updated_at = :updated_at",
-        ConditionExpression="#status = :old_status",
-        ExpressionAttributeNames={"#status": "status"},
-        ExpressionAttributeValues={":status": status, ":old_status": old_status, ":updated_at": now},
-    )
     try:
+        table.update_item(
+            Key={"request_id": request_id},
+            UpdateExpression="SET #status = :status, updated_at = :updated_at",
+            ConditionExpression=condition,
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={":status": status, ":updated_at": datetime.now(timezone.utc).isoformat()},
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        return _response(409, {"error": "The repair request changed. Refresh the page and try again."})
+
+    if not _notify_status_change(request, old_status, status):
+        return _response(502, {"error": "Status was updated, but its notification could not be sent."})
+    return _response(200, {"request_id": request_id, "status": status, "notification": "sent_if_subscribed"})
+
+
+def _notify_status_change(request, old_status, status):
+    try:
+        sns, _ = _aws_clients()
         sign_in_url = os.environ["FRONTEND_WEBSITE_URL"]
         sns.publish(
-            TopicArn=topic_arn,
+            TopicArn=os.environ["NOTIFICATIONS_TOPIC_ARN"],
             Subject="Repair Cafe update available",
             # Keep the email generic: SNS filter-policy changes are eventually
             # consistent, so a new subscription must never receive request data.
@@ -174,8 +196,8 @@ def _update_status_and_notify(user_id, request_id, status):
             )
     except Exception as error:
         LOGGER.error("SNS status notification failed: %s", type(error).__name__)
-        return _response(502, {"error": "Status was updated, but its notification could not be sent."})
-    return _response(200, {"request_id": request_id, "status": status, "notification": "sent_if_subscribed"})
+        return False
+    return True
 
 # validates the summary inout before sending it to bedrock
 def _validate_notes(event):
@@ -252,6 +274,18 @@ def _sfn_client():
     return boto3.client("stepfunctions")
 
 
+@lru_cache(maxsize=1)
+def _cognito_client():
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client("cognito-idp", config=Config(
+        connect_timeout=1,
+        read_timeout=2,
+        retries={"total_max_attempts": 1},
+    ))
+
+
 def _create_request(event, requester_id):
     try:
         body = json.loads(event.get("body") or "")
@@ -311,12 +345,207 @@ def _list_requests(requester_id):
             ProjectionExpression="request_id, item_name, description, #status, created_at",
             ExpressionAttributeNames={"#status": "status"},
             ScanIndexForward=False,
-            Limit=50,
+            Limit=REQUEST_PAGE_SIZE,
         )
     except Exception as error:
         LOGGER.error("Repair request query failed: %s", type(error).__name__)
         return _response(500, {"error": "Unable to load repair requests."})
     return _response(200, {"requests": result.get("Items", [])})
+
+
+def _list_volunteer_requests(user_id, view, search, cursor):
+    from boto3.dynamodb.conditions import Attr, Key
+
+    if view == "available":
+        index = os.environ["STATUS_INDEX_NAME"]
+        key_name, key_value = "status", "Submitted"
+        filter_expression = Attr("volunteer_id").not_exists() & Attr("requester_id").ne(user_id)
+    else:
+        index = os.environ["VOLUNTEER_INDEX_NAME"]
+        key_name, key_value = "volunteer_id", user_id
+        filter_expression = None
+
+    query = {
+        "IndexName": index,
+        "KeyConditionExpression": Key(key_name).eq(key_value),
+        "ProjectionExpression": "request_id, item_name, description, #status, created_at",
+        "ExpressionAttributeNames": {"#status": "status"},
+        "ScanIndexForward": False,
+        "Limit": REQUEST_PAGE_SIZE,
+    }
+    if filter_expression is not None:
+        query["FilterExpression"] = filter_expression
+    if cursor is not None:
+        try:
+            if not cursor or len(cursor) > 1024:
+                raise ValueError
+            key = json.loads(base64.urlsafe_b64decode(cursor))
+            if not isinstance(key, list) or len(key) != 2:
+                raise ValueError
+            created_at, request_id = key
+            if not all(isinstance(value, str) and value for value in key):
+                raise ValueError
+        except (ValueError, binascii.Error):
+            return _response(400, {"error": "Invalid request page cursor."})
+        query["ExclusiveStartKey"] = {key_name: key_value, "created_at": created_at, "request_id": request_id}
+
+    result = _requests_table().query(**query)
+    requests = result.get("Items", [])
+    if view == "available" and search:
+        requests = [request for request in requests if search in request["item_name"].lower()]
+
+    last_key = result.get("LastEvaluatedKey")
+    next_cursor = None
+    if last_key:
+        key = [last_key["created_at"], last_key["request_id"]]
+        next_cursor = base64.urlsafe_b64encode(json.dumps(key).encode()).decode()
+    return _response(200, {"requests": requests, "next_cursor": next_cursor})
+
+
+def _volunteer_label(client, user_pool_id, user_id):
+    from botocore.exceptions import BotoCoreError, ClientError
+
+    try:
+        profile = client.admin_get_user(UserPoolId=user_pool_id, Username=user_id)
+    except client.exceptions.UserNotFoundException:
+        return None
+    except (BotoCoreError, ClientError) as error:
+        LOGGER.warning("Volunteer profile lookup failed: %s", type(error).__name__)
+        return None
+
+    attributes = {attr["Name"]: attr["Value"].strip() for attr in profile.get("UserAttributes", ())}
+    full_name = " ".join(filter(None, (attributes.get("given_name"), attributes.get("family_name"))))
+    return attributes.get("name") or full_name or attributes.get("email")
+
+
+def _volunteer_request(request, user_id, labels):
+    volunteer_id = request.get("volunteer_id")
+    assignment = None
+    if volunteer_id:
+        assignment = {"mine": volunteer_id == user_id, "label": labels.get(volunteer_id)}
+
+    return {
+        **{field: request[field] for field in REQUEST_LIST_FIELDS},
+        "assignment": assignment,
+        "can_claim": (
+            request["status"] == "Submitted"
+            and "volunteer_id" not in request
+            and request.get("requester_id") != user_id
+        ),
+    }
+
+
+def _search_volunteer_requests(user_id, search, cursor):
+    from boto3.dynamodb.conditions import Key
+
+    positions = dict.fromkeys(REQUEST_STATUSES)
+    if cursor is not None:
+        try:
+            if not cursor or len(cursor) > 1024:
+                raise ValueError
+            positions = json.loads(base64.urlsafe_b64decode(cursor))
+            if not isinstance(positions, dict) or not positions or positions.keys() - set(REQUEST_STATUSES):
+                raise ValueError
+            for key in positions.values():
+                if key is not None and (
+                    not isinstance(key, list) or len(key) != 2
+                    or not all(isinstance(value, str) and value for value in key)
+                ):
+                    raise ValueError
+        except (ValueError, binascii.Error):
+            return _response(400, {"error": "Invalid request page cursor."})
+
+    table = _requests_table()
+    pages = {}
+    next_positions = positions.copy()
+    for status, position in positions.items():
+        query = {
+            "IndexName": os.environ["STATUS_INDEX_NAME"],
+            "KeyConditionExpression": Key("status").eq(status),
+            "ProjectionExpression": "request_id, item_name, description, #status, created_at, requester_id, volunteer_id",
+            "ExpressionAttributeNames": {"#status": "status"},
+            "ScanIndexForward": False,
+            "Limit": REQUEST_PAGE_SIZE,
+        }
+        if position is not None:
+            query["ExclusiveStartKey"] = {"status": status, "created_at": position[0], "request_id": position[1]}
+        page = table.query(**query)
+        if page["Items"]:
+            pages[status] = page
+        else:
+            next_positions.pop(status)
+
+    # Continue each status partition from the last item actually consumed.
+    remaining = {status: len(page["Items"]) for status, page in pages.items()}
+    newest = merge(*(page["Items"] for page in pages.values()), key=lambda item: item["created_at"], reverse=True)
+    matches = {}
+    for evaluated, item in enumerate(newest, start=1):
+        status = item["status"]
+        request_id = item["request_id"]
+        if search in item["item_name"].lower():
+            matches.setdefault(request_id, item)
+        remaining[status] -= 1
+        next_positions[status] = [item["created_at"], request_id]
+        if not remaining[status]:
+            if pages[status].get("LastEvaluatedKey"):
+                break
+            next_positions.pop(status)
+        if evaluated == REQUEST_PAGE_SIZE:
+            break
+
+    volunteers = {item.get("volunteer_id") for item in matches.values()} - {None, user_id}
+    labels = {}
+    if volunteers:
+        client = _cognito_client()
+        user_pool_id = os.environ["COGNITO_USER_POOL_ID"]
+        with ThreadPoolExecutor(max_workers=8) as executor:
+            pending = {
+                volunteer_id: executor.submit(_volunteer_label, client, user_pool_id, volunteer_id)
+                for volunteer_id in volunteers
+            }
+            labels = {volunteer_id: lookup.result() for volunteer_id, lookup in pending.items()}
+
+    return _response(200, {
+        "requests": [_volunteer_request(item, user_id, labels) for item in matches.values()],
+        "next_cursor": base64.urlsafe_b64encode(json.dumps(next_positions).encode()).decode() if next_positions else None,
+    })
+
+
+def _change_request_claim(user_id, request_id, claim):
+    from boto3.dynamodb.conditions import Attr
+
+    table = _requests_table()
+    values = {":updated_at": datetime.now(timezone.utc).isoformat()}
+    if claim:
+        old_status, new_status = "Submitted", "In Progress"
+        update = "SET #status = :status, updated_at = :updated_at, volunteer_id = :volunteer"
+        condition = Attr("volunteer_id").not_exists() & Attr("requester_id").ne(user_id)
+        values[":volunteer"] = user_id
+        conflict = "This repair request is no longer available to claim."
+    else:
+        old_status, new_status = "In Progress", "Submitted"
+        update = "SET #status = :status, updated_at = :updated_at REMOVE volunteer_id"
+        condition = Attr("volunteer_id").eq(user_id)
+        conflict = "You can only release a repair request that is in progress and assigned to you."
+
+    try:
+        result = table.update_item(
+            Key={"request_id": request_id},
+            UpdateExpression=update,
+            ConditionExpression=condition & Attr("status").eq(old_status),
+            ExpressionAttributeNames={"#status": "status"},
+            ExpressionAttributeValues={**values, ":status": new_status},
+            ReturnValues="ALL_NEW",
+        )
+    except table.meta.client.exceptions.ConditionalCheckFailedException:
+        return _response(409, {"error": conflict})
+
+    request = result["Attributes"]
+    notified = _notify_status_change(request, old_status, new_status)
+    return _response(200, {
+        "request": _volunteer_request(request, user_id, {}),
+        "notification": "sent_if_subscribed" if notified else "failed",
+    })
 
 
 def _create_upload_url(event, requester_id, path_params):
@@ -567,12 +796,12 @@ def _store_extraction_failure(event):
 
 
 # decides what to do with each event
-def _is_admin(claims):
+def _cognito_groups(claims):
     groups = claims.get("cognito:groups", [])
     if isinstance(groups, str):
         # API Gateway can serialize the array claim as a bracketed list.
         groups = [group.strip().strip('"') for group in groups.strip("[]").split(",")]
-    return isinstance(groups, list) and "Admins" in groups
+    return groups if isinstance(groups, list) else []
 
 
 def lambda_handler(event, context):
@@ -587,13 +816,16 @@ def lambda_handler(event, context):
         if not claims.get("sub") or claims.get("token_use") != "access":
             return _response(401, {"error": "A valid Cognito access token is required."})
         user_id = claims["sub"]
+        groups = _cognito_groups(claims)
+        is_volunteer = "Volunteers" in groups
         route = event.get("routeKey")
         path_params = event.get("pathParameters") or {}
         if route == "GET /me":
             return _response(200, {
                 "message": "Repair Cafe backend is running.",
                 "user_id": user_id,
-                "is_admin": _is_admin(claims),
+                "is_admin": "Admins" in groups,
+                "is_volunteer": is_volunteer,
             })
 
         if route == "POST /me/notifications":
@@ -612,16 +844,49 @@ def lambda_handler(event, context):
                 request_id = path_params.get("request_id")
                 if not isinstance(request_id, str) or not request_id:
                     return _response(400, {"error": "A request_id path parameter is required."})
-                return _update_status_and_notify(user_id, request_id, body.get("status"))
+                return _update_status_and_notify(user_id, is_volunteer, request_id, body.get("status"))
             except ValueError as error:
                 return _response(400, {"error": str(error)})
             except Exception as error:
                 LOGGER.error("Repair status update failed: %s", type(error).__name__)
                 return _response(502, {"error": "Unable to update the repair status. Please retry."})
+        if route in {"POST /requests/{request_id}/claim", "DELETE /requests/{request_id}/claim"}:
+            if not is_volunteer:
+                return _response(403, {"error": "Only volunteers can claim or release repair requests."})
+            request_id = path_params.get("request_id")
+            if not isinstance(request_id, str) or not request_id:
+                return _response(400, {"error": "A request_id path parameter is required."})
+            try:
+                return _change_request_claim(user_id, request_id, claim=route.startswith("POST"))
+            except Exception as error:
+                LOGGER.error("Repair claim update failed: %s", type(error).__name__)
+                return _response(502, {"error": "Unable to update the repair claim. Please retry."})
+        if route == "GET /requests":
+            params = event.get("queryStringParameters") or {}
+            view = params.get("view")
+            if not is_volunteer:
+                if view is not None:
+                    return _response(403, {"error": "Only volunteers can browse repair requests."})
+                return _list_requests(user_id)
+            if view not in {"all", "available", "claimed"}:
+                return _response(400, {"error": "Choose the all, available, or claimed request view."})
+            try:
+                search = params.get("q", "").strip().lower()
+                if view == "all":
+                    return _search_volunteer_requests(user_id, search, params.get("cursor"))
+                return _list_volunteer_requests(user_id, view, search, params.get("cursor"))
+            except Exception as error:
+                LOGGER.error("Volunteer request query failed: %s", type(error).__name__)
+                return _response(500, {"error": "Unable to load repair requests."})
+        if is_volunteer and route in {
+            "POST /requests",
+            "POST /requests/{request_id}/uploads",
+            "POST /requests/{request_id}/extractions",
+            "GET /requests/{request_id}/ai-results/{result_id}",
+        }:
+            return _response(403, {"error": "This action is available to requesters only."})
         if route == "POST /requests":
             return _create_request(event, user_id)
-        if route == "GET /requests":
-            return _list_requests(user_id)
         if route in {"GET /requests/{request_id}/notes", "POST /requests/{request_id}/notes"}:
             request_id = path_params.get("request_id")
             if not isinstance(request_id, str) or not request_id:

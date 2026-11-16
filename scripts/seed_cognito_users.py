@@ -6,6 +6,7 @@ import re
 import subprocess
 import sys
 import tempfile
+from pathlib import Path
 
 
 def roster():
@@ -32,12 +33,12 @@ def roster():
 
 def aws_call(service, operation, payload, expected_error=None):
     # Keep passwords out of command arguments and raw AWS output out of CI logs.
-    with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8") as request:
-        json.dump(payload, request)
-        request.flush()
+    with tempfile.TemporaryDirectory() as directory:
+        request = Path(directory) / "request.json"
+        request.write_text(json.dumps(payload), encoding="utf-8")
         result = subprocess.run(
             ["aws", service, operation, "--cli-input-json",
-             f"file://{request.name}", "--output", "json", "--no-cli-pager"],
+             f"file://{request}", "--output", "json", "--no-cli-pager"],
             capture_output=True, text=True,
         )
     if result.returncode:

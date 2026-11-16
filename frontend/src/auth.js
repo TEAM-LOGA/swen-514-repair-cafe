@@ -52,7 +52,9 @@ export async function apiRequest(config, path, { method = "GET", body, signal } 
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || !result) {
-    throw new Error(result?.error || `The backend request failed (HTTP ${response.status}).`);
+    const error = new Error(result?.error || `The backend request failed (HTTP ${response.status}).`);
+    error.status = response.status;
+    throw error;
   }
   return result;
 }
