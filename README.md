@@ -75,9 +75,33 @@ Configure these GitHub Actions **secrets** for the selected environment:
 
 The workflow builds a Python 3.13 Lambda ZIP, runs Terraform, uploads the frontend files, and writes the website and API URLs into the workflow run **Summary** when successful. The Terraform environment name remains `dev`; the selected GitHub environment selects deployment credentials and the state key.
 
-For the volunteer walkthrough, enable **volunteer_demo** when running `terraform_apply` and leave `admin_email` empty. Terraform creates `requester@example.invalid`, `volunteer-a@example.invalid`, and `volunteer-b@example.invalid`. The last two are added to **Volunteers**. Open the HTTPS website from the run summary. Use the approved AWS account to access the generated passwords in Systems Manager Parameter Store under `/repair-cafe-dev/volunteer-demo/<role>/password`, where `<role>` is `requester`, `volunteer-a`, or `volunteer-b`. Keep **volunteer_demo** enabled on later applies to retain these accounts. Terraform removes the accounts and their password parameters when the option is turned off or the environment is destroyed.
-
 > **Caution:** `terraform_destroy` deletes the application infrastructure. Use it only when you intend to remove that environment.
+
+## Run the optional volunteer demo
+
+Demo mode creates one requester and two volunteers with generated passwords. Use a configured GitHub environment dedicated to testing.
+
+1. Open the [Repair Cafe workflow](https://github.com/TEAM-LOGA/swen-514-repair-cafe/actions/workflows/main.yml) and click **Run workflow**. Select `main`, choose `terraform_apply` and your test environment, check **volunteer_demo**, and leave `admin_email` blank.
+2. When the run succeeds, open the **Website** link in the run’s **Summary**.
+3. In the AWS account and Region used for the deployment, open **Systems Manager → Parameter Store**. Open each parameter below and show its decrypted value to get the account password.
+
+   | Account | Sign-in email | Password parameter |
+   | --- | --- | --- |
+   | Requester | `requester@example.invalid` | `/repair-cafe-dev/volunteer-demo/requester/password` |
+   | Volunteer A | `volunteer-a@example.invalid` | `/repair-cafe-dev/volunteer-demo/volunteer-a/password` |
+   | Volunteer B | `volunteer-b@example.invalid` | `/repair-cafe-dev/volunteer-demo/volunteer-b/password` |
+
+4. Sign in using three separate browser profiles so the accounts stay independent. The requester sees **My repair requests**. Both volunteers see **Volunteer dashboard**.
+
+### Try a repair request
+
+1. As the requester, submit **Cordless Drill** with the description **Intermittent trigger**. Confirm the status is **Submitted**.
+2. In both volunteer profiles, search for `dRiLl`. Leave Volunteer B’s results open.
+3. As Volunteer A, click **Claim**. Confirm the result says **Claimed by you**. Reload the requester page and confirm **In Progress**.
+4. As Volunteer B, click **Claim** on the old result before refreshing. Confirm the conflict message appears and the refreshed result says **Claimed by Volunteer A**.
+5. As Volunteer A, click **Release** under **My claimed requests**. Reload the requester page to confirm **Submitted**. Refresh Volunteer B’s results and confirm **Claim** is available again.
+
+Keep **volunteer_demo** checked when redeploying to keep the demo accounts. To remove the whole test deployment, run the workflow with `terraform_destroy` and select the same GitHub environment. This deletes the demo accounts, their passwords, and the application data in that environment.
 
 ## Local Terraform setup
 
