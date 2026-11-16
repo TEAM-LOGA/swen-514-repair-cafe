@@ -78,6 +78,12 @@ resource "aws_iam_role_policy" "backend" {
         Resource = var.request_index_arns
       },
       {
+        Sid      = "ReadVolunteerDisplayName"
+        Effect   = "Allow"
+        Action   = "cognito-idp:AdminGetUser"
+        Resource = var.user_pool_arn
+      },
+      {
         Sid      = "ReadAndUploadFiles"
         Effect   = "Allow"
         Action   = ["s3:GetObject", "s3:PutObject"]

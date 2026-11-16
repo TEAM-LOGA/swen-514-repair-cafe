@@ -59,7 +59,7 @@ function insertRequest(requests, updated) {
   return [...requests.filter(({ request_id }) => request_id !== updated.request_id), updated].sort(newestFirst);
 }
 
-function RequestList({ heading, list, emptyMessage, action, actionLabel, actionableStatus, busy, pendingId }) {
+function RequestList({ heading, list, emptyMessage, action, actionLabel, canAct, busy, pendingId }) {
   return (
     <section aria-label={heading}>
       <h4>{heading}</h4>
@@ -72,7 +72,10 @@ function RequestList({ heading, list, emptyMessage, action, actionLabel, actiona
             <li key={request.request_id}>
               <strong>{request.item_name}</strong> — {request.status}
               <p>{request.description}</p>
-              {request.status === actionableStatus && (
+              {request.assignment && (
+                <p>Claimed by {request.assignment.mine ? "you" : request.assignment.label || "another volunteer"}</p>
+              )}
+              {canAct(request) && (
                 <button
                   type="button"
                   disabled={busy}
@@ -102,9 +105,9 @@ export default function VolunteerRequests({ config }) {
   const [pendingId, setPendingId] = useState(null);
   const [actionError, setActionError] = useState("");
   const [feedback, setFeedback] = useState("");
-  const available = useRequestList(config, "available", search, refresh);
+  const browse = useRequestList(config, "all", search, refresh);
   const claimed = useRequestList(config, "claimed", "", refresh);
-  const busy = pendingId !== null || available.loading || claimed.loading;
+  const busy = pendingId !== null || browse.loading || claimed.loading;
 
   function refreshLists() {
     setRefresh((previous) => previous + 1);
@@ -118,14 +121,13 @@ export default function VolunteerRequests({ config }) {
       const path = `/requests/${encodeURIComponent(request.request_id)}/claim`;
       const { request: updated, notification } = await apiRequest(config, path, { method });
       const isClaim = method === "POST";
+      if (updated.item_name.toLowerCase().includes(search.toLowerCase())) {
+        browse.setRequests((previous) => insertRequest(previous, updated));
+      }
       if (isClaim) {
-        available.setRequests((previous) => previous.filter(({ request_id }) => request_id !== updated.request_id));
         claimed.setRequests((previous) => insertRequest(previous, updated));
       } else {
         claimed.setRequests((previous) => previous.filter(({ request_id }) => request_id !== updated.request_id));
-        if (updated.item_name.toLowerCase().includes(search.toLowerCase())) {
-          available.setRequests((previous) => insertRequest(previous, updated));
-        }
       }
       const message = `${updated.item_name} ${isClaim ? "claimed" : "released"}.`;
       setFeedback(notification === "failed" ? `${message} The status email could not be sent.` : message);
@@ -144,10 +146,10 @@ export default function VolunteerRequests({ config }) {
         event.preventDefault();
         if (pendingId !== null) return;
         const term = searchInput.trim();
-        if (term === search) available.loadPage();
+        if (term === search) browse.loadPage();
         else setSearch(term);
       }}>
-        <label htmlFor="volunteer-search">Search available requests by item name</label>{" "}
+        <label htmlFor="volunteer-search">Search requests by item name</label>{" "}
         <input id="volunteer-search" type="search" value={searchInput} maxLength={120}
           onChange={(event) => setSearchInput(event.target.value)} />{" "}
         <button type="submit" disabled={pendingId !== null}>Search</button>{" "}
@@ -155,12 +157,13 @@ export default function VolunteerRequests({ config }) {
       </form>
       {actionError && <p role="alert">{actionError}</p>}
       {feedback && <p role="status">{feedback}</p>}
-      <RequestList heading="Available requests" list={available}
-        emptyMessage={search ? "No available requests match that item name." : "No repair requests are available."}
-        action={(request) => changeClaim(request, "POST")} actionLabel="Claim" actionableStatus="Submitted"
+      <RequestList heading="Repair requests" list={browse}
+        emptyMessage={search ? "No requests match that item name." : "No repair requests yet."}
+        action={(request) => changeClaim(request, "POST")} actionLabel="Claim" canAct={(request) => request.can_claim}
         busy={busy} pendingId={pendingId} />
       <RequestList heading="My claimed requests" list={claimed} emptyMessage="You have no claimed requests."
-        action={(request) => changeClaim(request, "DELETE")} actionLabel="Release" actionableStatus="In Progress"
+        action={(request) => changeClaim(request, "DELETE")} actionLabel="Release"
+        canAct={(request) => request.status === "In Progress"}
         busy={busy} pendingId={pendingId} />
     </section>
   );

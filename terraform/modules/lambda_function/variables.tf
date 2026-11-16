@@ -39,6 +39,12 @@ variable "request_index_arns" {
   nullable    = false
 }
 
+variable "user_pool_arn" {
+  description = "Cognito user pool ARN for volunteer display name lookups."
+  type        = string
+  nullable    = false
+}
+
 variable "uploads_bucket_arn" {
   description = "Private uploads bucket ARN for reading objects and creating presigned upload/download URLs."
   type        = string

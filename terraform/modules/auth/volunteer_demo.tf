@@ -15,6 +15,7 @@ resource "aws_cognito_user" "volunteer_demo" {
   attributes = {
     email          = each.value
     email_verified = "true"
+    name           = title(replace(each.key, "-", " "))
   }
 }
 

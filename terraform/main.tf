@@ -93,6 +93,7 @@ module "lambda_function" {
   handler                   = var.lambda_handler
   table_arns                = values(module.database.table_arns)
   request_index_arns        = module.database.request_index_arns
+  user_pool_arn             = module.auth.user_pool_arn
   uploads_bucket_arn        = module.uploads.bucket_arn
   notifications_topic_arn   = module.notifications.topic_arn
   admin_requests_topic_arns = module.notifications.admin_requests_topic_arns
