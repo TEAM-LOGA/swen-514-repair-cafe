@@ -12,3 +12,8 @@ output "website_url" {
   description = "HTTP URL of the S3 static website."
   value       = "http://${aws_s3_bucket_website_configuration.frontend.website_endpoint}"
 }
+
+output "https_origin" {
+  description = "HTTPS origin for public frontend objects."
+  value       = "https://${aws_s3_bucket.frontend.bucket_regional_domain_name}"
+}

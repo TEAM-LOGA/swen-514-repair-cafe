@@ -75,6 +75,8 @@ Configure these GitHub Actions **secrets** for the selected environment:
 
 The workflow builds a Python 3.13 Lambda ZIP, runs Terraform, uploads the frontend files, and writes the website and API URLs into the workflow run **Summary** when successful. The Terraform environment name remains `dev`; the selected GitHub environment selects deployment credentials and the state key.
 
+For the volunteer walkthrough, enable **volunteer_demo** when running `terraform_apply` and leave `admin_email` empty. Terraform creates `requester@example.invalid`, `volunteer-a@example.invalid`, and `volunteer-b@example.invalid`. The last two are added to **Volunteers**. Open the HTTPS website from the run summary. Use the approved AWS account to access the generated passwords in Systems Manager Parameter Store under `/repair-cafe-dev/volunteer-demo/<role>/password`, where `<role>` is `requester`, `volunteer-a`, or `volunteer-b`. Keep **volunteer_demo** enabled on later applies to retain these accounts. Terraform removes the accounts and their password parameters when the option is turned off or the environment is destroyed.
+
 > **Caution:** `terraform_destroy` deletes the application infrastructure. Use it only when you intend to remove that environment.
 
 ## Local Terraform setup
@@ -102,6 +104,6 @@ The routes listed in `terraform/modules/api/main.tf` describe planned API surfac
 
 ## Security and deployment notes
 
-- The current Terraform frontend hosting output is an S3 static website URL using HTTP. Set up HTTPS hosting (for example, CloudFront with an appropriate domain and certificate) before using it for real user credentials.
+- The standard deployment uses the HTTP S3 website endpoint. The volunteer demo uses the HTTPS S3 object endpoint for `index.html`.
 - Keep AWS credentials and other secrets in GitHub Actions secrets or an AWS credential provider, never in source control.
 - Review IAM permissions and Terraform plans before deploying changes.

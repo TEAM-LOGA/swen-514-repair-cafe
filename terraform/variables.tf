@@ -55,6 +55,13 @@ variable "admin_email" {
   default     = ""
 }
 
+variable "enable_volunteer_demo" {
+  description = "Provision three synthetic Cognito accounts for the volunteer workflow demo."
+  type        = bool
+  default     = false
+  nullable    = false
+}
+
 variable "bedrock_model_arn" {
   description = "Bedrock model or system inference-profile ARN in aws_region. Use the US Sonnet 4.6 inference profile for the deploying AWS account."
   type        = string
