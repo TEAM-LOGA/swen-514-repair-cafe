@@ -120,43 +120,60 @@ export default function App() {
   }
 
   return (
-    <main>
-      <h1>Fix-It Lab Repair Cafe</h1>
-      <p>Connecting people with broken items to volunteer fixers.</p>
+    <main className="app-shell">
+      <header className="site-header">
+        <a className="brand" href="#top" aria-label="Fix-It Lab home">
+          <span className="brand-mark" aria-hidden="true">✳</span>
+          <span>Fix-It Lab <span className="brand-light">Repair Cafe</span></span>
+        </a>
+        <span className="header-note">A little care goes a long way</span>
+      </header>
+      <div className="page-content" id="top">
+        {!user && <div className="welcome-copy">
+          <p className="eyebrow">Community repair, made simple</p>
+          <h1>Give good things<br /><span>another chance.</span></h1>
+          <p className="intro-copy">Connect with local volunteer fixers and keep the things you love in use.</p>
+        </div>}
       {/* Show loading, the signed-in account, or the login form. */}
       {loading ? <p role="status">Loading authentication…</p> : user ? (
-        <section aria-labelledby="account-heading">
+        <section className="account-panel" aria-labelledby="account-heading">
           <h2 id="account-heading">Your account</h2>
-          <p>Signed in as {user.signInDetails?.loginId || user.username}</p>
-          <button type="button" disabled={busy} onClick={handleLogout}>Log out</button>
-          <h3>Backend connection</h3>
-          {profile && <div role="status"><p>{profile.message}</p><p>User ID: {profile.user_id}</p></div>}
-          {apiError && <p role="alert">{apiError}</p>}
-          <button type="button" disabled={busy} onClick={async () => {
-            setBusy(true);
-            try { await checkBackend(); } finally { setBusy(false); }
-          }}>Check backend connection</button>
+          <div className="account-bar"><p>Signed in as <strong>{user.signInDetails?.loginId || user.username}</strong></p>
+            <button className="button button-quiet" type="button" disabled={busy} onClick={handleLogout}>Log out</button></div>
+          <details className="connection-details">
+            <summary>Connection details</summary>
+            {profile && <div role="status"><p>{profile.message}</p><p>User ID: {profile.user_id}</p></div>}
+            {apiError && <p role="alert">{apiError}</p>}
+            <button className="button button-quiet" type="button" disabled={busy} onClick={async () => {
+              setBusy(true);
+              try { await checkBackend(); } finally { setBusy(false); }
+            }}>Check backend connection</button>
+          </details>
           {!profile && !apiError && <p role="status">Loading your workspace…</p>}
           {profile?.is_volunteer === true && <VolunteerRequests key={user.userId} config={config} />}
           {profile?.is_volunteer === false && <RepairRequests key={user.userId} config={config} />}
         </section>
       ) : (
-        <form onSubmit={handleLogin} aria-labelledby="login-heading">
+        <form className="login-card" onSubmit={handleLogin} aria-labelledby="login-heading">
+          <span className="card-icon" aria-hidden="true">↗</span>
           <h2 id="login-heading">Log in</h2>
+          <p className="muted">Welcome back. Sign in to manage your repair requests.</p>
           <fieldset disabled={!config || busy}>
-            <legend>Account credentials</legend>
-            <p><label htmlFor="email">Email</label><br />
+            <legend className="sr-only">Account credentials</legend>
+            <p><label htmlFor="email">Email address</label>
               <input id="email" name="email" type="email" autoComplete="username" required
                 value={email} onChange={(event) => setEmail(event.target.value)} /></p>
-            <p><label htmlFor="password">Password</label><br />
+            <p><label htmlFor="password">Password</label>
               <input id="password" name="password" type="password" autoComplete="current-password" required
                 value={password} onChange={(event) => setPassword(event.target.value)} /></p>
-            <button type="submit">{busy ? "Logging in…" : "Log in"}</button>
+            <button className="button button-primary button-wide" type="submit">{busy ? "Logging in…" : "Log in"}<span aria-hidden="true"> →</span></button>
           </fieldset>
-          <p>Use the demo account provided by your team.</p>
+          <p className="login-note">Use the demo account provided by your team.</p>
         </form>
       )}
       {error && <p role="alert">{error}</p>}
+      </div>
+      <footer className="site-footer"><span>Repair together. Waste less.</span><span>Fix-It Lab Repair Cafe</span></footer>
     </main>
   );
 }
