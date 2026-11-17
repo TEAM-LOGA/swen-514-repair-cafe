@@ -25,19 +25,19 @@ button:disabled { cursor: wait; opacity: .6; }
 .brand-mark { display: grid; place-items: center; width: 36px; height: 36px; background: #315d46; border-radius: 12px; color: #fff; font-size: 23px; }
 .brand-light { color: #6c7d70; font-weight: 500; }
 .header-note { color: var(--muted); font-size: 13px; }
-.page-content { max-width: 1100px; margin: 0 auto; padding: 68px 0 84px; }
-.welcome-copy { max-width: 680px; margin: 0 auto 42px; text-align: center; }
+.page-content { max-width: 1100px; margin: 0 auto; padding: 40px 0 46px; }
+.welcome-copy { max-width: 680px; margin: 0 auto 26px; text-align: center; }
 .eyebrow { margin: 0 0 15px; color: #53745c; font-size: 12px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
 h1, h2, h3, h4 { font-family: 'Avenir Next', Avenir, sans-serif; color: #20352c; }
-h1 { margin: 0; font-size: clamp(38px, 5.2vw, 64px); line-height: 1.06; letter-spacing: -.065em; }
+h1 { margin: 0; font-size: clamp(36px, 4.6vw, 56px); line-height: 1.04; letter-spacing: -.065em; }
 h1 span { color: #52775d; }
-.intro-copy { max-width: 480px; margin: 18px auto 0; color: #69776c; font-size: 17px; line-height: 1.65; }
-.login-card { position: relative; max-width: 460px; margin: 0 auto; padding: 34px 38px 26px; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 15px 45px #2944320c; }
-.card-icon { display: grid; place-items: center; width: 42px; height: 42px; margin-bottom: 20px; color: var(--green); background: #eaf1e8; border-radius: 14px; font-size: 23px; }
+.intro-copy { max-width: 480px; margin: 12px auto 0; color: #69776c; font-size: 16px; line-height: 1.55; }
+.login-card { position: relative; max-width: 460px; margin: 0 auto; padding: 26px 32px 20px; background: var(--paper); border: 1px solid var(--line); border-radius: 20px; box-shadow: 0 15px 45px #2944320c; }
+.card-icon { display: grid; place-items: center; width: 38px; height: 38px; margin-bottom: 14px; color: var(--green); background: #eaf1e8; border-radius: 13px; font-size: 21px; }
 .login-card h2, .account-panel > h2 { margin: 0; font-size: 23px; letter-spacing: -.04em; }
-.muted { margin: 7px 0 22px; color: var(--muted); font-size: 14px; }
+.muted { margin: 6px 0 16px; color: var(--muted); font-size: 14px; }
 fieldset { min-width: 0; margin: 0; padding: 0; border: 0; }
-.login-card fieldset p { margin: 0 0 16px; }
+.login-card fieldset p { margin: 0 0 12px; }
 label { display: block; margin-bottom: 7px; color: #44544a; font-size: 13px; font-weight: 700; }
 input:not([type=file]), textarea, select { width: 100%; min-height: 46px; padding: 11px 13px; color: var(--ink); background: #fff; border: 1px solid #dce4da; border-radius: 9px; transition: border-color .15s, box-shadow .15s; }
 textarea { min-height: 120px; resize: vertical; }
@@ -48,15 +48,15 @@ input:not([type=file]):focus, textarea:focus, select:focus { border-color: #7091
 .button-primary:hover:not(:disabled) { background: var(--green-dark); }
 .button-quiet { color: #41584a; background: #f2f5ef; border-color: #e3e9e0; }
 .button-wide { width: 100%; margin-top: 4px; }
-.login-note { margin: 20px 0 0; padding-top: 17px; color: #879187; border-top: 1px solid #edf0eb; text-align: center; font-size: 12px; }
-.account-panel { padding: 28px; background: var(--paper); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 12px 34px #2944320a; }
+.login-note { margin: 14px 0 0; padding-top: 13px; color: #879187; border-top: 1px solid #edf0eb; text-align: center; font-size: 12px; }
+.account-panel { padding: 22px; background: var(--paper); border: 1px solid var(--line); border-radius: 18px; box-shadow: 0 12px 34px #2944320a; }
 .account-bar { display: flex; align-items: center; justify-content: space-between; gap: 18px; margin: 12px 0 16px; }
 .account-bar p { margin: 0; color: var(--muted); font-size: 14px; }
 .account-bar strong { color: var(--ink); }
 .connection-details { padding: 13px 15px; background: #f7f8f4; border-radius: 10px; color: #627066; font-size: 13px; }
 .connection-details summary { cursor: pointer; font-weight: 700; }
 .connection-details p { overflow-wrap: anywhere; }
-.account-panel > section { margin-top: 28px; }
+.account-panel > section { margin-top: 20px; }
 .account-panel h3 { margin-top: 0; font-size: 25px; letter-spacing: -.04em; }
 .account-panel h4 { font-size: 17px; }
 .account-panel section > form { display: flex; align-items: end; flex-wrap: wrap; gap: 10px; margin: 18px 0 26px; }
@@ -64,8 +64,8 @@ input:not([type=file]):focus, textarea:focus, select:focus { border-color: #7091
 .account-panel section > form label input { display: block; margin-top: 7px; }
 .account-panel section > form button, .account-panel section button { min-height: 42px; padding: 0 15px; color: #355641; background: #edf3eb; border: 1px solid #dce8da; border-radius: 9px; font-weight: 700; }
 .account-panel section button:hover:not(:disabled) { background: #e0ecdf; }
-.account-panel section ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 14px; margin: 14px 0 24px; padding: 0; list-style: none; }
-.account-panel section ul > li { padding: 20px; background: #fff; border: 1px solid var(--line); border-radius: 13px; }
+.account-panel section ul { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr)); gap: 10px; margin: 12px 0 18px; padding: 0; list-style: none; }
+.account-panel section ul > li { padding: 16px; background: #fff; border: 1px solid var(--line); border-radius: 13px; }
 .account-panel section ul > li > strong { font: 700 17px 'Avenir Next', Avenir, sans-serif; }
 .account-panel section ul > li > p { color: #69776c; line-height: 1.55; }
 .account-panel section form fieldset { width: 100%; }
@@ -80,17 +80,17 @@ input:not([type=file]):focus, textarea:focus, select:focus { border-color: #7091
 .account-panel section small { color: #758177; line-height: 1.6; }
 .account-panel section [role=alert] { padding: 11px 13px; color: #8a3c32; background: #fff0ed; border-radius: 8px; }
 .account-panel section [role=status] { color: #426549; }
-.site-footer { display: flex; justify-content: space-between; padding: 20px 0 28px; color: #8a958a; border-top: 1px solid #e5ebe2; font-size: 12px; }
+.site-footer { display: flex; justify-content: space-between; padding: 14px 0 20px; color: #8a958a; border-top: 1px solid #e5ebe2; font-size: 12px; }
 .sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0,0,0,0); white-space: nowrap; border: 0; }
 
 @media (max-width: 680px) {
   .app-shell { padding: 0 20px; }
   .site-header { height: 70px; }
   .header-note { display: none; }
-  .page-content { padding: 48px 0 58px; }
-  .welcome-copy { margin-bottom: 30px; }
+  .page-content { padding: 34px 0 40px; }
+  .welcome-copy { margin-bottom: 24px; }
   .intro-copy { font-size: 15px; }
-  .login-card { padding: 27px 23px 22px; }
+  .login-card { padding: 23px 20px 19px; }
   .account-panel { padding: 21px 16px; }
   .account-bar { align-items: flex-start; }
   .account-panel section > form { align-items: stretch; }

@@ -129,11 +129,11 @@ export default function App() {
         <span className="header-note">A little care goes a long way</span>
       </header>
       <div className="page-content" id="top">
-        <div className="welcome-copy">
+        {!user && <div className="welcome-copy">
           <p className="eyebrow">Community repair, made simple</p>
           <h1>Give good things<br /><span>another chance.</span></h1>
           <p className="intro-copy">Connect with local volunteer fixers and keep the things you love in use.</p>
-        </div>
+        </div>}
       {/* Show loading, the signed-in account, or the login form. */}
       {loading ? <p role="status">Loading authentication…</p> : user ? (
         <section className="account-panel" aria-labelledby="account-heading">
