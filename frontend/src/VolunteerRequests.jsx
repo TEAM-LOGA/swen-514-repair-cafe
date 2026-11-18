@@ -1,3 +1,4 @@
+import RepairNotes from "./RepairNotes.jsx";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { apiRequest } from "./auth.js";
 
@@ -59,7 +60,7 @@ function insertRequest(requests, updated) {
   return [...requests.filter(({ request_id }) => request_id !== updated.request_id), updated].sort(newestFirst);
 }
 
-function RequestList({ heading, list, emptyMessage, action, actionLabel, canAct, busy, pendingId }) {
+function RequestList({ heading, list, emptyMessage, action, actionLabel, canAct, busy, pendingId, config, showWork = false }) {
   return (
     <section aria-label={heading}>
       <h4>{heading}</h4>
@@ -75,6 +76,7 @@ function RequestList({ heading, list, emptyMessage, action, actionLabel, canAct,
               {request.assignment && (
                 <p>Claimed by {request.assignment.mine ? "you" : request.assignment.label || "another volunteer"}</p>
               )}
+              {showWork && <RepairNotes config={config} request={request} canWrite />}
               {canAct(request) && (
                 <button
                   type="button"
@@ -161,7 +163,7 @@ export default function VolunteerRequests({ config }) {
         emptyMessage={search ? "No requests match that item name." : "No repair requests yet."}
         action={(request) => changeClaim(request, "POST")} actionLabel="Claim" canAct={(request) => request.can_claim}
         busy={busy} pendingId={pendingId} />
-      <RequestList heading="My claimed requests" list={claimed} emptyMessage="You have no claimed requests."
+      <RequestList config={config} showWork heading="My claimed requests" list={claimed} emptyMessage="You have no claimed requests."
         action={(request) => changeClaim(request, "DELETE")} actionLabel="Release"
         canAct={(request) => request.status === "In Progress"}
         busy={busy} pendingId={pendingId} />

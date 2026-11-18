@@ -1,4 +1,6 @@
+import OutcomeConfirmation from "./OutcomeConfirmation.jsx";
 import { useEffect, useRef, useState } from "react";
+import RepairNotes from "./RepairNotes.jsx";
 import { apiRequest } from "./auth.js";
 
 const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp", "image/gif", "application/pdf"];
@@ -383,6 +385,8 @@ export default function RepairRequests({ config }) {
                 <strong>{request.item_name}</strong> — {request.status}
                 <p>{request.description}</p>
                 <RequestStatusForm config={config} request={request} onStatusChange={applyRequestStatus} />
+                <RepairNotes config={config} request={request} />
+                <OutcomeConfirmation config={config} request={request} canConfirm />
                 {extraction && (
                   <div aria-live="polite">
                     {extraction.status === "processing" && (
