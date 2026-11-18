@@ -87,9 +87,9 @@ Demo mode creates a synthetic requester, two volunteers, and six example repairs
 
 | Account | Sign-in email |
 | --- | --- |
-| Requester | `requester@example.invalid` |
-| Volunteer A | `volunteer-a@example.invalid` |
-| Volunteer B | `volunteer-b@example.invalid` |
+| Requester | `requester@repaircafe.com` |
+| Volunteer A | `volunteer-a@repaircafe.com` |
+| Volunteer B | `volunteer-b@repaircafe.com` |
 
 ### Walk through the demo
 

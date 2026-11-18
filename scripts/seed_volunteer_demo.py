@@ -80,7 +80,7 @@ def confirm_accounts(pool_id, identities):
 
     accounts = []
     for role, identity in identities.items():
-        email = f"{role}@example.invalid"
+        email = f"{role}@repaircafe.com"
         if identity["email"] != email or not identity["sub"]:
             raise SystemExit(f"Unexpected Terraform identity for {role}.")
         account = {"UserPoolId": pool_id, "Username": email}

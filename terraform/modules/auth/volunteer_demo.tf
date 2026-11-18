@@ -1,8 +1,8 @@
 locals {
   demo_users = var.enable_volunteer_demo ? {
-    requester   = "requester@example.invalid"
-    volunteer-a = "volunteer-a@example.invalid"
-    volunteer-b = "volunteer-b@example.invalid"
+    requester   = "requester@repaircafe.com"
+    volunteer-a = "volunteer-a@repaircafe.com"
+    volunteer-b = "volunteer-b@repaircafe.com"
   } : {}
 }
 
