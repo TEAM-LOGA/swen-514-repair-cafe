@@ -29,16 +29,25 @@ def lambda_handler(event, context):
     else:
         raise ValueError("Provide either {bucket, key} for S3 mode or {file} for base64 mode.")
 
-    lines = [
-        block["Text"]
+    line_blocks = [
+        block
         for block in tex_response.get("Blocks", [])
         if block["BlockType"] == "LINE"
     ]
 
-    # Return top-level fields so Step Functions ResultSelector ($.Payload.text, $.Payload.lines)
+    lines = [block["Text"] for block in line_blocks]
+    confidences = [round(float(block.get("Confidence") or 0), 2) for block in line_blocks]
+    avg_confidence = (
+        round(sum(confidences) / len(confidences), 2) if confidences else 0
+    )
+
+    # Return top-level fields so Step Functions ResultSelector
+    # ($.Payload.text, $.Payload.lines, $.Payload.confidences, $.Payload.avg_confidence)
     # can extract them directly without having to parse stringified JSON body.
     return {
         "statusCode": 200,
         "text": "\n".join(lines),
         "lines": lines,
+        "confidences": confidences,
+        "avg_confidence": avg_confidence,
     }

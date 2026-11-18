@@ -60,6 +60,50 @@ function insertRequest(requests, updated) {
   return [...requests.filter(({ request_id }) => request_id !== updated.request_id), updated].sort(newestFirst);
 }
 
+function RequestStatusControls({ config, request, onChanged, busy }) {
+  const [status, setStatus] = useState(request.status);
+  const [updating, setUpdating] = useState(false);
+  const [error, setError] = useState("");
+
+  useEffect(() => setStatus(request.status), [request.status]);
+
+  async function updateStatus(event) {
+    event.preventDefault();
+    setUpdating(true);
+    setError("");
+    try {
+      const result = await apiRequest(
+        config,
+        `/requests/${encodeURIComponent(request.request_id)}/status`,
+        { method: "PATCH", body: { status } },
+      );
+      onChanged(request.request_id, result.status);
+    } catch (error) {
+      setError(error.message);
+    } finally {
+      setUpdating(false);
+    }
+  }
+
+  return (
+    <form onSubmit={updateStatus}>
+      <fieldset disabled={busy || updating}>
+        <legend>Status</legend>
+        <label>
+          Change status{" "}
+          <select value={status} onChange={(event) => setStatus(event.target.value)}>
+            <option>In Progress</option>
+            <option>Completed</option>
+            <option>Unresolved</option>
+          </select>
+        </label>{" "}
+        <button type="submit" disabled={status === request.status}>Update status</button>
+      </fieldset>
+      {error && <p role="alert">{error}</p>}
+    </form>
+  );
+}
+
 function RequestList({ heading, list, emptyMessage, action, actionLabel, canAct, busy, pendingId, config, showWork = false }) {
   return (
     <section aria-label={heading}>
@@ -76,16 +120,31 @@ function RequestList({ heading, list, emptyMessage, action, actionLabel, canAct,
               {request.assignment && (
                 <p>Claimed by {request.assignment.mine ? "you" : request.assignment.label || "another volunteer"}</p>
               )}
+              {canAct && canAct(request) && (
+                <p>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => action(request)}
+                    aria-label={`${actionLabel} ${request.item_name}`}
+                  >
+                    {pendingId === request.request_id ? "Updating…" : actionLabel}
+                  </button>
+                </p>
+              )}
               {showWork && <RepairNotes config={config} request={request} canWrite />}
-              {canAct(request) && (
-                <button
-                  type="button"
-                  disabled={busy}
-                  onClick={() => action(request)}
-                  aria-label={`${actionLabel} ${request.item_name}`}
-                >
-                  {pendingId === request.request_id ? "Updating…" : actionLabel}
-                </button>
+              {showWork && (
+                <RequestStatusControls
+                  config={config}
+                  request={request}
+                  busy={busy}
+                  onChanged={(requestId, status) => {
+                    list.setRequests((previous) => insertRequest(previous, {
+                      ...request,
+                      status,
+                    }));
+                  }}
+                />
               )}
             </li>
           ))}

@@ -45,10 +45,17 @@ Keep the draft under 150 words. All output requires volunteer review.
 
 # format the response for API gateway
 def _response(status, payload):
+    from decimal import Decimal
+
+    def json_value(value):
+        if isinstance(value, Decimal):
+            return int(value) if value == value.to_integral_value() else float(value)
+        return value
+
     return {
         "statusCode": status,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(payload),
+        "body": json.dumps(payload, default=json_value),
     }
 
 # create the Boto3 client used to communicate with bedrock
@@ -732,6 +739,72 @@ def _get_ai_result(requester_id, path_params):
     return _response(200, record)
 
 
+def _update_ai_result(requester_id, path_params, event):
+    """Allow requester to correct or edit low-confidence extracted text."""
+    request_id = path_params.get("request_id", "")
+    raw_result_id = path_params.get("result_id", "")
+    result_id = urllib.parse.unquote(raw_result_id)
+    if not request_id or not result_id:
+        return _response(400, {"error": "Missing request_id or result_id."})
+
+    try:
+        req_item = _requests_table().get_item(
+            Key={"request_id": request_id},
+            ProjectionExpression="requester_id",
+        ).get("Item")
+    except Exception as error:
+        LOGGER.error("Request ownership check failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to verify request ownership."})
+
+    if not req_item:
+        return _response(404, {"error": "Repair request not found."})
+    if req_item.get("requester_id") != requester_id:
+        return _response(403, {"error": "You do not own this repair request."})
+
+    try:
+        body = json.loads(event.get("body") or "")
+    except (TypeError, ValueError):
+        return _response(400, {"error": "Send a JSON object with corrected_text."})
+    if not isinstance(body, dict):
+        return _response(400, {"error": "Send a JSON object with corrected_text."})
+
+    corrected_text = body.get("corrected_text")
+    if not isinstance(corrected_text, str) or not corrected_text.strip():
+        return _response(400, {"error": "corrected_text must be non-empty text."})
+
+    corrected_lines = [line.strip() for line in corrected_text.strip().splitlines() if line.strip()]
+
+    try:
+        _records_table().update_item(
+            Key={"request_id": request_id, "record_key": result_id},
+            UpdateExpression=(
+                "SET extracted_text = :t, #l = :l, user_corrected = :uc,"
+                " review_status = :rs, needs_review = :nr, corrected_at = :c"
+            ),
+            ExpressionAttributeNames={"#l": "lines"},
+            ExpressionAttributeValues={
+                ":t": corrected_text.strip(),
+                ":l": corrected_lines,
+                ":uc": True,
+                ":rs": "user_corrected",
+                ":nr": False,
+                ":c": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
+            },
+        )
+    except Exception as error:
+        LOGGER.error("AI result update failed: %s", type(error).__name__)
+        return _response(500, {"error": "Unable to update extraction result."})
+
+    return _response(200, {
+        "message": "Extraction result updated.",
+        "extracted_text": corrected_text.strip(),
+        "lines": corrected_lines,
+        "user_corrected": True,
+        "review_status": "user_corrected",
+        "needs_review": False,
+    })
+
+
 def _store_extraction(event):
     """
     Called directly by Step Functions (not through API Gateway) to persist
@@ -742,20 +815,35 @@ def _store_extraction(event):
     file_id = event.get("file_id")
     text = event.get("text", "")
     lines = event.get("lines", [])
+    confidences = event.get("confidences") or []
+    avg_confidence = event.get("avg_confidence") if event.get("avg_confidence") is not None else 0
     record_key = event.get("record_key")
 
     if not request_id or not file_id or not record_key:
         raise ValueError("store_extraction requires request_id, file_id, and record_key.")
 
     try:
+        from decimal import Decimal
+
+        needs_review = bool(avg_confidence < 70 or any(c < 70 for c in confidences))
+        review_status = "needs_review" if needs_review else "accepted"
+
         _records_table().update_item(
             Key={"request_id": request_id, "record_key": record_key},
-            UpdateExpression="SET #s = :s, extracted_text = :t, #l = :l, completed_at = :c",
+            UpdateExpression=(
+                "SET #s = :s, extracted_text = :t, #l = :l,"
+                " confidences = :conf, avg_confidence = :avg,"
+                " needs_review = :nr, review_status = :rs, completed_at = :c"
+            ),
             ExpressionAttributeNames={"#s": "status", "#l": "lines"},
             ExpressionAttributeValues={
                 ":s": "complete",
                 ":t": text,
                 ":l": lines,
+                ":conf": [Decimal(str(c)) for c in confidences],
+                ":avg": Decimal(str(avg_confidence)),
+                ":nr": needs_review,
+                ":rs": review_status,
                 ":c": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
             },
         )
@@ -902,6 +990,7 @@ def lambda_handler(event, context):
             "POST /requests/{request_id}/uploads",
             "POST /requests/{request_id}/extractions",
             "GET /requests/{request_id}/ai-results/{result_id}",
+            "PATCH /requests/{request_id}/ai-results/{result_id}",
         }:
             return _response(403, {"error": "This action is available to requesters only."})
         if route == "POST /requests":
@@ -928,6 +1017,8 @@ def lambda_handler(event, context):
             return _start_extraction(event, user_id, path_params)
         if route == "GET /requests/{request_id}/ai-results/{result_id}":
             return _get_ai_result(user_id, path_params)
+        if route == "PATCH /requests/{request_id}/ai-results/{result_id}":
+            return _update_ai_result(user_id, path_params, event)
         return _response(501, {"error": "This repair workflow route is not implemented yet."})
 
     # Direct invocations (from Step Functions, not API Gateway).
