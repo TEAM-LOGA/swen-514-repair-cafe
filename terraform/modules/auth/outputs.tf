@@ -17,3 +17,13 @@ output "issuer_url" {
   description = "Cognito token issuer URL for the API Gateway JWT authorizer."
   value       = "https://${aws_cognito_user_pool.users.endpoint}"
 }
+
+output "volunteer_demo_users" {
+  description = "Synthetic account identities for the volunteer demo deployment script."
+  value = {
+    for role, user in aws_cognito_user.volunteer_demo : role => {
+      email = local.demo_users[role]
+      sub   = user.sub
+    }
+  }
+}

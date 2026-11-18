@@ -33,6 +33,11 @@ output "cognito_issuer_url" {
   value       = module.auth.issuer_url
 }
 
+output "volunteer_demo_users" {
+  description = "Synthetic Cognito account identities for the volunteer demo."
+  value       = module.auth.volunteer_demo_users
+}
+
 output "notifications_topic_arn" {
   description = "SNS topic for requester repair-status notifications."
   value       = module.notifications.topic_arn

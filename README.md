@@ -79,29 +79,27 @@ The workflow builds a Python 3.13 Lambda ZIP, runs Terraform, uploads the fronte
 
 ## Run the optional volunteer demo
 
-Demo mode creates one requester and two volunteers with generated passwords. Use a configured GitHub environment dedicated to testing.
+Demo mode creates a synthetic requester, two volunteers, and six example repairs. Use a GitHub environment dedicated to demo data. Start with empty Terraform state for the first deployment of this version.
 
-1. Open the [Repair Cafe workflow](https://github.com/TEAM-LOGA/swen-514-repair-cafe/actions/workflows/main.yml) and click **Run workflow**. Select `main`, choose `terraform_apply` and your test environment, check **volunteer_demo**, and leave `admin_email` blank.
-2. When the run succeeds, open the **Website** link in the run’s **Summary**.
-3. In the AWS account and Region used for the deployment, open **Systems Manager → Parameter Store**. Open each parameter below and show its decrypted value to get the account password.
+1. Open the [Repair Cafe workflow](https://github.com/TEAM-LOGA/swen-514-repair-cafe/actions/workflows/main.yml) and click **Run workflow**. Select the branch with the demo changes, choose `terraform_apply` and your demo environment, check **volunteer_demo**, and leave `admin_email` blank.
+2. Open the **Website** link in the successful run’s **Summary**.
+3. Use separate browser profiles to keep the three sessions open together. The password for each account is `password`.
 
-   | Account | Sign-in email | Password parameter |
-   | --- | --- | --- |
-   | Requester | `requester@example.invalid` | `/repair-cafe-dev/volunteer-demo/requester/password` |
-   | Volunteer A | `volunteer-a@example.invalid` | `/repair-cafe-dev/volunteer-demo/volunteer-a/password` |
-   | Volunteer B | `volunteer-b@example.invalid` | `/repair-cafe-dev/volunteer-demo/volunteer-b/password` |
+| Account | Sign-in email |
+| --- | --- |
+| Requester | `requester@example.invalid` |
+| Volunteer A | `volunteer-a@example.invalid` |
+| Volunteer B | `volunteer-b@example.invalid` |
 
-4. Sign in using three separate browser profiles so the accounts stay independent. The requester sees **My repair requests**. Both volunteers see **Volunteer dashboard**.
+### Walk through the demo
 
-### Try a repair request
+1. As the requester, open **My repair requests** to see **Desk Lamp** and **Wobbly Chair** waiting for a volunteer, **USB Keyboard** and **Portable Fan** in progress, **Bicycle Bell** completed and acknowledged, and **Backpack Zipper** unresolved and awaiting acknowledgement. Open the repair notes and use **My repair history** to filter terminal outcomes.
+2. As Volunteer A, find **USB Keyboard** and **Bicycle Bell** under **My claimed requests**. As Volunteer B, find **Portable Fan** and **Backpack Zipper**. Search for any of those items from the other volunteer’s dashboard to see who claimed it.
+3. Search for `dEsK lAmP` in both volunteer sessions. Claim the lamp as Volunteer A, then try the same claim from Volunteer B’s stale results to see the conflict. Release it from Volunteer A’s dashboard to make it available again.
+4. To try adding a note, changing the status, and acknowledging the outcome, submit a new repair. Claim it as either volunteer, add a note, mark it complete, then acknowledge it as the requester.
+5. To demonstrate document extraction, download the [sample repair label](docs/demo-repair-label.png) and attach it to a new request. After submission, open the extracted text to see the confidence scores. Use **Edit text** to correct a line and save it.
 
-1. As the requester, submit **Cordless Drill** with the description **Intermittent trigger**. Confirm the status is **Submitted**.
-2. In both volunteer profiles, search for `dRiLl`. Leave Volunteer B’s results open.
-3. As Volunteer A, click **Claim**. Confirm the result says **Claimed by you**. Reload the requester page and confirm **In Progress**.
-4. As Volunteer B, click **Claim** on the old result before refreshing. Confirm the conflict message appears and the refreshed result says **Claimed by Volunteer A**.
-5. As Volunteer A, click **Release** under **My claimed requests**. Reload the requester page to confirm **Submitted**. Refresh Volunteer B’s results and confirm **Claim** is available again.
-
-Keep **volunteer_demo** checked when redeploying to keep the demo accounts. To remove the whole test deployment, run the workflow with `terraform_destroy` and select the same GitHub environment. This deletes the demo accounts, their passwords, and the application data in that environment.
+Keep **volunteer_demo** checked for redeployments. The workflow restores the shared demo password and fills in any missing example requests. It preserves changes to existing requests. To remove the deployment, run `terraform_destroy` with **volunteer_demo** checked and select the same GitHub environment. This removes the demo accounts and application data in that environment.
 
 ## Local Terraform setup
 

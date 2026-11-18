@@ -60,6 +60,11 @@ variable "enable_volunteer_demo" {
   type        = bool
   default     = false
   nullable    = false
+
+  validation {
+    condition     = !var.enable_volunteer_demo || (var.environment != "prod" && var.admin_email == "")
+    error_message = "Volunteer demo mode requires a non-production environment and an empty admin_email."
+  }
 }
 
 variable "bedrock_model_arn" {

@@ -8,7 +8,7 @@ on:
         type: string
         required: false
       volunteer_demo:
-        description: Provision a synthetic requester and two volunteers through Terraform
+        description: Provision three synthetic accounts and seed their repair workflow
         type: boolean
         default: false
       action:
@@ -169,7 +169,18 @@ jobs:
 
       - name: Plan terraform_apply
         if: inputs.action == 'terraform_apply'
-        run: terraform plan -lock-timeout=5m -out="$RUNNER_TEMP/setup.tfplan"
+        run: |
+          terraform plan -lock-timeout=5m -out="$RUNNER_TEMP/setup.tfplan"
+          if ! terraform show -json "$RUNNER_TEMP/setup.tfplan" | jq -e --argjson demo "$TF_VAR_enable_volunteer_demo" '
+            [.resource_changes[]?
+              | select(.address == "module.auth.aws_cognito_user_pool.users")
+              | .change.before
+              | select(. != null)]
+            | all((.admin_create_user_config[0].allow_admin_create_user_only // false) == $demo)
+          ' >/dev/null; then
+            echo "::error::The existing Cognito pool uses a different deployment mode. Select its current mode or deploy into an empty Terraform state."
+            exit 1
+          fi
 
       - name: Apply terraform_apply
         if: inputs.action == 'terraform_apply'
@@ -200,6 +211,15 @@ jobs:
           REQUESTS_TABLE_NAME="$(terraform output -json database_table_names | jq -er '.requests')"
           export COGNITO_POOL_ID REQUESTS_TABLE_NAME
           python3 ../scripts/seed_repair_requests.py
+
+      - name: Prepare volunteer demo accounts and repairs
+        if: inputs.action == 'terraform_apply' && inputs.volunteer_demo
+        run: |
+          COGNITO_POOL_ID="$(terraform output -raw cognito_user_pool_id)"
+          VOLUNTEER_DEMO_USERS="$(terraform output -json volunteer_demo_users)"
+          DEMO_TABLE_NAMES="$(terraform output -json database_table_names)"
+          export COGNITO_POOL_ID VOLUNTEER_DEMO_USERS DEMO_TABLE_NAMES
+          python3 ../scripts/seed_volunteer_demo.py
 
       - name: Deploy frontend files and configuration
         if: inputs.action == 'terraform_apply'

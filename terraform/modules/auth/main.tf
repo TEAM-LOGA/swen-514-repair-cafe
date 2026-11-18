@@ -3,10 +3,6 @@ terraform {
     aws = {
       source = "hashicorp/aws"
     }
-    random = {
-      source  = "hashicorp/random"
-      version = "~> 3.7"
-    }
   }
 }
 
@@ -22,15 +18,15 @@ resource "aws_cognito_user_pool" "users" {
   }
 
   admin_create_user_config {
-    allow_admin_create_user_only = false
+    allow_admin_create_user_only = var.enable_volunteer_demo
   }
 
   password_policy {
-    minimum_length                   = 12
+    minimum_length                   = var.enable_volunteer_demo ? 8 : 12
     require_lowercase                = true
-    require_uppercase                = true
-    require_numbers                  = true
-    require_symbols                  = true
+    require_uppercase                = !var.enable_volunteer_demo
+    require_numbers                  = !var.enable_volunteer_demo
+    require_symbols                  = !var.enable_volunteer_demo
     temporary_password_validity_days = 7
   }
 
