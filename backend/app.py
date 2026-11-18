@@ -742,20 +742,29 @@ def _store_extraction(event):
     file_id = event.get("file_id")
     text = event.get("text", "")
     lines = event.get("lines", [])
+    confidences = event.get("confidences", [])
+    avg_confidence = event.get("avg_confidence", 0)
     record_key = event.get("record_key")
 
     if not request_id or not file_id or not record_key:
         raise ValueError("store_extraction requires request_id, file_id, and record_key.")
 
     try:
+        from decimal import Decimal
+
         _records_table().update_item(
             Key={"request_id": request_id, "record_key": record_key},
-            UpdateExpression="SET #s = :s, extracted_text = :t, #l = :l, completed_at = :c",
+            UpdateExpression=(
+                "SET #s = :s, extracted_text = :t, #l = :l,"
+                " confidences = :conf, avg_confidence = :avg, completed_at = :c"
+            ),
             ExpressionAttributeNames={"#s": "status", "#l": "lines"},
             ExpressionAttributeValues={
                 ":s": "complete",
                 ":t": text,
                 ":l": lines,
+                ":conf": [Decimal(str(c)) for c in confidences],
+                ":avg": Decimal(str(avg_confidence)),
                 ":c": datetime.now(timezone.utc).isoformat(timespec="microseconds"),
             },
         )

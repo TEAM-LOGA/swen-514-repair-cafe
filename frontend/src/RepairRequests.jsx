@@ -22,7 +22,7 @@ export default function RepairRequests({ config }) {
   const [preparingPhoto, setPreparingPhoto] = useState(false);
   const [cameraError, setCameraError] = useState("");
 
-  // Per-request extraction results: { [request_id]: { status, text, error } }
+  // Per-request extraction results: { [request_id]: { status, text, lines, confidences, avgConfidence, error } }
   const [extractions, setExtractions] = useState({});
   const pollTimers = useRef({}); // request_id → { intervalId, attempts }
 
@@ -103,7 +103,7 @@ export default function RepairRequests({ config }) {
   async function startExtraction(requestId, fileId) {
     setExtractions((prev) => ({
       ...prev,
-      [requestId]: { status: "processing", text: null, error: null },
+      [requestId]: { status: "processing", text: null, lines: null, confidences: null, avgConfidence: null, error: null },
     }));
 
     let resultId;
@@ -116,7 +116,7 @@ export default function RepairRequests({ config }) {
     } catch (err) {
       setExtractions((prev) => ({
         ...prev,
-        [requestId]: { status: "error", text: null, error: err.message },
+        [requestId]: { status: "error", text: null, lines: null, confidences: null, avgConfidence: null, error: err.message },
       }));
       return;
     }
@@ -135,21 +135,28 @@ export default function RepairRequests({ config }) {
           delete pollTimers.current[requestId];
           setExtractions((prev) => ({
             ...prev,
-            [requestId]: { status: "complete", text: record.extracted_text, error: null },
+            [requestId]: {
+              status: "complete",
+              text: record.extracted_text,
+              lines: record.lines || [],
+              confidences: record.confidences || [],
+              avgConfidence: record.avg_confidence ?? null,
+              error: null,
+            },
           }));
         } else if (record.status === "failed") {
           clearInterval(intervalId);
           delete pollTimers.current[requestId];
           setExtractions((prev) => ({
             ...prev,
-            [requestId]: { status: "error", text: null, error: "Extraction failed on the server." },
+            [requestId]: { status: "error", text: null, lines: null, confidences: null, avgConfidence: null, error: "Extraction failed on the server." },
           }));
         } else if (attempts >= POLL_MAX_ATTEMPTS) {
           clearInterval(intervalId);
           delete pollTimers.current[requestId];
           setExtractions((prev) => ({
             ...prev,
-            [requestId]: { status: "error", text: null, error: "Extraction timed out." },
+            [requestId]: { status: "error", text: null, lines: null, confidences: null, avgConfidence: null, error: "Extraction timed out." },
           }));
         }
       } catch {
@@ -159,7 +166,7 @@ export default function RepairRequests({ config }) {
           delete pollTimers.current[requestId];
           setExtractions((prev) => ({
             ...prev,
-            [requestId]: { status: "error", text: null, error: "Could not retrieve extraction result." },
+            [requestId]: { status: "error", text: null, lines: null, confidences: null, avgConfidence: null, error: "Could not retrieve extraction result." },
           }));
         }
       }
@@ -322,10 +329,33 @@ export default function RepairRequests({ config }) {
                     )}
                     {extraction.status === "complete" && extraction.text && (
                       <details>
-                        <summary><small>📄 Extracted text</small></summary>
-                        <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.85em" }}>
-                          {extraction.text}
-                        </pre>
+                        <summary>
+                          <small>📄 Extracted text</small>
+                          {extraction.avgConfidence != null && (
+                            <small> — <ConfidenceBadge value={extraction.avgConfidence} label="overall" /></small>
+                          )}
+                        </summary>
+                        {extraction.lines && extraction.lines.length > 0 ? (
+                          <ul style={{ listStyle: "none", padding: 0, margin: "0.5em 0", fontSize: "0.85em" }}>
+                            {extraction.lines.map((line, i) => {
+                              const conf = extraction.confidences?.[i];
+                              return (
+                                <li key={i} style={{ padding: "0.2em 0", borderBottom: "1px solid #eee" }}>
+                                  <span>{line}</span>
+                                  {conf != null && (
+                                    <span style={{ marginLeft: "0.75em" }}>
+                                      <ConfidenceBadge value={conf} />
+                                    </span>
+                                  )}
+                                </li>
+                              );
+                            })}
+                          </ul>
+                        ) : (
+                          <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.85em" }}>
+                            {extraction.text}
+                          </pre>
+                        )}
                       </details>
                     )}
                     {extraction.status === "error" && (
@@ -339,6 +369,31 @@ export default function RepairRequests({ config }) {
         </ul>
       )}
     </section>
+  );
+}
+
+/** Colour-coded confidence badge (green ≥ 90, yellow ≥ 70, red < 70). */
+function ConfidenceBadge({ value, label }) {
+  const pct = typeof value === "number" ? value : 0;
+  let color = "#c0392b"; // red
+  if (pct >= 90) color = "#27ae60"; // green
+  else if (pct >= 70) color = "#f39c12"; // yellow/orange
+
+  return (
+    <span
+      style={{
+        display: "inline-block",
+        padding: "0.1em 0.45em",
+        borderRadius: "4px",
+        fontSize: "0.8em",
+        fontWeight: 600,
+        color: "#fff",
+        backgroundColor: color,
+      }}
+      title={`Textract confidence: ${pct.toFixed(1)}%`}
+    >
+      {pct.toFixed(1)}%{label ? ` ${label}` : ""}
+    </span>
   );
 }
 
