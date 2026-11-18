@@ -36,7 +36,7 @@ def lambda_handler(event, context):
     ]
 
     lines = [block["Text"] for block in line_blocks]
-    confidences = [round(block.get("Confidence", 0), 2) for block in line_blocks]
+    confidences = [round(float(block.get("Confidence") or 0), 2) for block in line_blocks]
     avg_confidence = (
         round(sum(confidences) / len(confidences), 2) if confidences else 0
     )

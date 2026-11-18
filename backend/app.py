@@ -749,8 +749,8 @@ def _store_extraction(event):
     file_id = event.get("file_id")
     text = event.get("text", "")
     lines = event.get("lines", [])
-    confidences = event.get("confidences", [])
-    avg_confidence = event.get("avg_confidence", 0)
+    confidences = event.get("confidences") or []
+    avg_confidence = event.get("avg_confidence") if event.get("avg_confidence") is not None else 0
     record_key = event.get("record_key")
 
     if not request_id or not file_id or not record_key:

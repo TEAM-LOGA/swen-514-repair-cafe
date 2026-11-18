@@ -97,8 +97,10 @@ resource "aws_sfn_state_machine" "extraction" {
         }
         # Pluck the fields we need from the Lambda response envelope ($.Payload)
         ResultSelector = {
-          "text.$"  = "$.Payload.text"
-          "lines.$" = "$.Payload.lines"
+          "text.$"           = "$.Payload.text"
+          "lines.$"          = "$.Payload.lines"
+          "confidences.$"    = "$.Payload.confidences"
+          "avg_confidence.$" = "$.Payload.avg_confidence"
         }
         # Write Textract output under $.extraction so original fields survive
         ResultPath = "$.extraction"
@@ -129,6 +131,8 @@ resource "aws_sfn_state_machine" "extraction" {
             "record_key.$"       = "$.record_key"
             "text.$"             = "$.extraction.text"
             "lines.$"            = "$.extraction.lines"
+            "confidences.$"      = "$.extraction.confidences"
+            "avg_confidence.$"   = "$.extraction.avg_confidence"
           }
         }
         # Discard the Lambda response; we only care about success/failure
