@@ -25,6 +25,10 @@ export default function RepairRequests({ config }) {
   // Per-request extraction results: { [request_id]: { status, text, lines, confidences, avgConfidence, error } }
   const [extractions, setExtractions] = useState({});
   const pollTimers = useRef({}); // request_id → { intervalId, attempts }
+  const [editingText, setEditingText] = useState({}); // { [requestId]: string }
+  const [savingEdit, setSavingEdit] = useState({}); // { [requestId]: boolean }
+  const [editError, setEditError] = useState({}); // { [requestId]: string }
+  const [copiedId, setCopiedId] = useState(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -137,10 +141,13 @@ export default function RepairRequests({ config }) {
             ...prev,
             [requestId]: {
               status: "complete",
+              resultId: resultId,
               text: record.extracted_text,
               lines: record.lines || [],
               confidences: record.confidences || [],
               avgConfidence: record.avg_confidence ?? null,
+              userCorrected: Boolean(record.user_corrected),
+              needsReview: Boolean(record.needs_review),
               error: null,
             },
           }));
@@ -173,6 +180,58 @@ export default function RepairRequests({ config }) {
     }, POLL_INTERVAL_MS);
 
     pollTimers.current[requestId] = { intervalId, attempts };
+  }
+
+  async function saveCorrection(requestId, resultId) {
+    const text = editingText[requestId];
+    if (typeof text !== "string" || !text.trim()) return;
+
+    setSavingEdit((prev) => ({ ...prev, [requestId]: true }));
+    setEditError((prev) => ({ ...prev, [requestId]: "" }));
+
+    try {
+      const response = await apiRequest(
+        config,
+        `/requests/${requestId}/ai-results/${encodeURIComponent(resultId)}`,
+        {
+          method: "PATCH",
+          body: { corrected_text: text.trim() },
+        }
+      );
+
+      setExtractions((prev) => ({
+        ...prev,
+        [requestId]: {
+          ...prev[requestId],
+          text: response.extracted_text,
+          lines: response.lines || response.extracted_text.split("\n"),
+          userCorrected: true,
+          needsReview: false,
+        },
+      }));
+      setEditingText((prev) => {
+        const next = { ...prev };
+        delete next[requestId];
+        return next;
+      });
+    } catch (err) {
+      setEditError((prev) => ({
+        ...prev,
+        [requestId]: err.message || "Could not save corrections.",
+      }));
+    } finally {
+      setSavingEdit((prev) => ({ ...prev, [requestId]: false }));
+    }
+  }
+
+  async function copyText(requestId, text) {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopiedId(requestId);
+      setTimeout(() => setCopiedId(null), 2500);
+    } catch {
+      // Fallback if clipboard API is not available
+    }
   }
 
   async function submitRequest(event) {
@@ -327,36 +386,208 @@ export default function RepairRequests({ config }) {
                     {extraction.status === "processing" && (
                       <p><small>⏳ Extracting text from uploaded file…</small></p>
                     )}
-                    {extraction.status === "complete" && extraction.text && (
-                      <details>
-                        <summary>
-                          <small>📄 Extracted text</small>
-                          {extraction.avgConfidence != null && (
-                            <small> — <ConfidenceBadge value={extraction.avgConfidence} label="overall" /></small>
+                    {extraction.status === "complete" && (
+                      extraction.text ? (
+                        <details open={extraction.avgConfidence != null && extraction.avgConfidence < 70 ? true : undefined}>
+                          <summary>
+                            <small>📄 Extracted text</small>
+                            {extraction.avgConfidence != null && (
+                              <small> — <ConfidenceBadge value={extraction.avgConfidence} label="overall" /></small>
+                            )}
+                            {extraction.userCorrected && (
+                              <small style={{ marginLeft: "0.5em", color: "#27ae60", fontWeight: 600 }}>✓ Corrected</small>
+                            )}
+                            {!extraction.userCorrected && extraction.avgConfidence != null && extraction.avgConfidence < 70 && (
+                              <small style={{ marginLeft: "0.5em", color: "#c0392b", fontWeight: 600 }}>⚠️ Needs review</small>
+                            )}
+                          </summary>
+
+                          {/* Low confidence advisory banner */}
+                          {!extraction.userCorrected && extraction.avgConfidence != null && extraction.avgConfidence < 70 && (
+                            <div
+                              role="alert"
+                              style={{
+                                padding: "0.5em 0.75em",
+                                margin: "0.5em 0",
+                                backgroundColor: extraction.avgConfidence < 50 ? "#fff1f0" : "#fffbe6",
+                                border: `1px solid ${extraction.avgConfidence < 50 ? "#ffa39e" : "#ffe58f"}`,
+                                borderRadius: "4px",
+                                fontSize: "0.85em",
+                                color: extraction.avgConfidence < 50 ? "#a8071a" : "#874d00",
+                              }}
+                            >
+                              <strong>
+                                {extraction.avgConfidence < 50
+                                  ? "⚠️ Very Low Confidence Scan (< 50%)"
+                                  : "⚠️ Low Confidence Scan (< 70%)"}
+                              </strong>
+                              <p style={{ margin: "0.25em 0" }}>
+                                {extraction.avgConfidence < 50
+                                  ? "Textract had trouble reading this image clearly. Characters, serial numbers, or model names are likely inaccurate."
+                                  : "Some text was difficult to recognize due to blur, lighting, or angle. Please verify the flagged lines."}
+                              </p>
+                              <div style={{ display: "flex", gap: "0.75em", flexWrap: "wrap", marginTop: "0.35em", alignItems: "center" }}>
+                                <span>💡 <em>Tip: Flat, well-lit, close-up photos without glare yield the best results.</em></span>
+                                {editingText[request.request_id] === undefined && extraction.resultId && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setEditingText((prev) => ({
+                                        ...prev,
+                                        [request.request_id]: extraction.text,
+                                      }))
+                                    }
+                                    style={{ fontSize: "0.85em", padding: "0.2em 0.5em", cursor: "pointer" }}
+                                  >
+                                    ✏️ Correct text
+                                  </button>
+                                )}
+                              </div>
+                            </div>
                           )}
-                        </summary>
-                        {extraction.lines && extraction.lines.length > 0 ? (
-                          <ul style={{ listStyle: "none", padding: 0, margin: "0.5em 0", fontSize: "0.85em" }}>
-                            {extraction.lines.map((line, i) => {
-                              const conf = extraction.confidences?.[i];
-                              return (
-                                <li key={i} style={{ padding: "0.2em 0", borderBottom: "1px solid #eee" }}>
-                                  <span>{line}</span>
-                                  {conf != null && (
-                                    <span style={{ marginLeft: "0.75em" }}>
-                                      <ConfidenceBadge value={conf} />
-                                    </span>
-                                  )}
-                                </li>
-                              );
-                            })}
-                          </ul>
-                        ) : (
-                          <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.85em" }}>
-                            {extraction.text}
-                          </pre>
-                        )}
-                      </details>
+
+                          {/* Inline edit form OR Display list */}
+                          {editingText[request.request_id] !== undefined ? (
+                            <div style={{ margin: "0.5em 0", padding: "0.6em", background: "#f8f9fa", borderRadius: "4px", border: "1px solid #ddd" }}>
+                              <label htmlFor={`edit-${request.request_id}`} style={{ display: "block", fontSize: "0.85em", fontWeight: 600, marginBottom: "0.3em" }}>
+                                Edit extracted text:
+                              </label>
+                              <textarea
+                                id={`edit-${request.request_id}`}
+                                rows={Math.min(10, Math.max(3, (editingText[request.request_id] || "").split("\n").length + 1))}
+                                value={editingText[request.request_id]}
+                                onChange={(e) =>
+                                  setEditingText((prev) => ({
+                                    ...prev,
+                                    [request.request_id]: e.target.value,
+                                  }))
+                                }
+                                disabled={savingEdit[request.request_id]}
+                                style={{ width: "100%", boxSizing: "border-box", fontSize: "0.85em", fontFamily: "monospace", padding: "0.4em" }}
+                              />
+                              {editError[request.request_id] && (
+                                <p role="alert" style={{ color: "#c0392b", fontSize: "0.8em", margin: "0.3em 0" }}>
+                                  {editError[request.request_id]}
+                                </p>
+                              )}
+                              <div style={{ display: "flex", gap: "0.5em", marginTop: "0.4em" }}>
+                                <button
+                                  type="button"
+                                  onClick={() => saveCorrection(request.request_id, extraction.resultId)}
+                                  disabled={savingEdit[request.request_id]}
+                                  style={{ fontSize: "0.85em", padding: "0.3em 0.8em" }}
+                                >
+                                  {savingEdit[request.request_id] ? "Saving…" : "Save correction"}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    setEditingText((prev) => {
+                                      const next = { ...prev };
+                                      delete next[request.request_id];
+                                      return next;
+                                    })
+                                  }
+                                  disabled={savingEdit[request.request_id]}
+                                  style={{ fontSize: "0.85em", padding: "0.3em 0.8em" }}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            </div>
+                          ) : (
+                            <>
+                              {extraction.lines && extraction.lines.length > 0 ? (
+                                <ul style={{ listStyle: "none", padding: 0, margin: "0.5em 0", fontSize: "0.85em" }}>
+                                  {extraction.lines.map((line, i) => {
+                                    const conf = extraction.confidences?.[i];
+                                    const isLineVeryLow = conf != null && conf < 50;
+                                    const isLineLow = conf != null && conf < 70;
+                                    return (
+                                      <li
+                                        key={i}
+                                        style={{
+                                          padding: "0.25em 0.4em",
+                                          margin: "0.15em 0",
+                                          borderRadius: "3px",
+                                          backgroundColor: isLineVeryLow ? "#fff1f0" : isLineLow ? "#fffbe6" : "transparent",
+                                          borderLeft: isLineLow ? `3px solid ${isLineVeryLow ? "#f5222d" : "#faad14"}` : "none",
+                                          borderBottom: isLineLow ? "none" : "1px solid #eee",
+                                          display: "flex",
+                                          justifyContent: "space-between",
+                                          alignItems: "center",
+                                          gap: "0.5em",
+                                        }}
+                                      >
+                                        <span style={{ wordBreak: "break-word" }}>
+                                          {isLineLow && (
+                                            <span title={`Uncertain line (${conf != null ? conf.toFixed(1) : 0}%)`} style={{ marginRight: "0.35em" }}>
+                                              ⚠️
+                                            </span>
+                                          )}
+                                          {line}
+                                        </span>
+                                        {conf != null && (
+                                          <span style={{ flexShrink: 0 }}>
+                                            <ConfidenceBadge value={conf} />
+                                          </span>
+                                        )}
+                                      </li>
+                                    );
+                                  })}
+                                </ul>
+                              ) : (
+                                <pre style={{ whiteSpace: "pre-wrap", fontSize: "0.85em" }}>
+                                  {extraction.text}
+                                </pre>
+                              )}
+
+                              {/* Action buttons */}
+                              <div style={{ display: "flex", gap: "0.5em", marginTop: "0.5em", fontSize: "0.8em" }}>
+                                {extraction.resultId && (
+                                  <button
+                                    type="button"
+                                    onClick={() =>
+                                      setEditingText((prev) => ({
+                                        ...prev,
+                                        [request.request_id]: extraction.text,
+                                      }))
+                                    }
+                                    style={{ fontSize: "0.9em", padding: "0.2em 0.5em", cursor: "pointer" }}
+                                  >
+                                    ✏️ Edit text
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => copyText(request.request_id, extraction.text)}
+                                  style={{ fontSize: "0.9em", padding: "0.2em 0.5em", cursor: "pointer" }}
+                                >
+                                  {copiedId === request.request_id ? "✓ Copied!" : "📋 Copy text"}
+                                </button>
+                              </div>
+                            </>
+                          )}
+                        </details>
+                      ) : (
+                        <div
+                          role="alert"
+                          style={{
+                            padding: "0.5em 0.75em",
+                            margin: "0.5em 0",
+                            backgroundColor: "#fff1f0",
+                            border: "1px solid #ffa39e",
+                            borderRadius: "4px",
+                            fontSize: "0.85em",
+                            color: "#a8071a",
+                          }}
+                        >
+                          <strong>⚠️ No readable text detected in this image (0.0% confidence)</strong>
+                          <p style={{ margin: "0.25em 0 0" }}>
+                            The scan could not recognize any characters clearly. Try uploading a well-lit, close-up photo of the label or manual.
+                          </p>
+                        </div>
+                      )
                     )}
                     {extraction.status === "error" && (
                       <p><small>⚠️ {extraction.error}</small></p>
@@ -372,12 +603,22 @@ export default function RepairRequests({ config }) {
   );
 }
 
-/** Colour-coded confidence badge (green ≥ 90, yellow ≥ 70, red < 70). */
+/** Colour-coded confidence badge (green ≥ 90, yellow ≥ 70, red < 70, dark red < 50). */
 function ConfidenceBadge({ value, label }) {
   const pct = typeof value === "number" ? value : 0;
-  let color = "#c0392b"; // red
+  let color = "#c0392b"; // red (< 70)
   if (pct >= 90) color = "#27ae60"; // green
   else if (pct >= 70) color = "#f39c12"; // yellow/orange
+  else if (pct < 50) color = "#962d22"; // dark red (< 50)
+
+  const level =
+    pct >= 90
+      ? "High confidence"
+      : pct >= 70
+      ? "Moderate confidence"
+      : pct >= 50
+      ? "Low confidence - review recommended"
+      : "Very low confidence - likely inaccurate";
 
   return (
     <span
@@ -390,7 +631,7 @@ function ConfidenceBadge({ value, label }) {
         color: "#fff",
         backgroundColor: color,
       }}
-      title={`Textract confidence: ${pct.toFixed(1)}%`}
+      title={`Textract confidence: ${pct.toFixed(1)}% (${level})`}
     >
       {pct.toFixed(1)}%{label ? ` ${label}` : ""}
     </span>
