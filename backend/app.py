@@ -45,10 +45,17 @@ Keep the draft under 150 words. All output requires volunteer review.
 
 # format the response for API gateway
 def _response(status, payload):
+    from decimal import Decimal
+
+    def json_value(value):
+        if isinstance(value, Decimal):
+            return int(value) if value == value.to_integral_value() else float(value)
+        return value
+
     return {
         "statusCode": status,
         "headers": {"Content-Type": "application/json"},
-        "body": json.dumps(payload),
+        "body": json.dumps(payload, default=json_value),
     }
 
 # create the Boto3 client used to communicate with bedrock
