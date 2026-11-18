@@ -120,6 +120,18 @@ function RequestList({ heading, list, emptyMessage, action, actionLabel, canAct,
               {request.assignment && (
                 <p>Claimed by {request.assignment.mine ? "you" : request.assignment.label || "another volunteer"}</p>
               )}
+              {canAct && canAct(request) && (
+                <p>
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={() => action(request)}
+                    aria-label={`${actionLabel} ${request.item_name}`}
+                  >
+                    {pendingId === request.request_id ? "Updating…" : actionLabel}
+                  </button>
+                </p>
+              )}
               {showWork && <RepairNotes config={config} request={request} canWrite />}
               {showWork && (
                 <RequestStatusControls
