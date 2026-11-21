@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Repair Cafe Demo</title>
+<style>
+  :root { --bg:#14171c; --fg:#f2f4f7; --muted:#9aa4b2; --accent:#f5a524; --card:#1e232b; --line:#2e3540; }
+  * { box-sizing: border-box; }
+  html, body { height:100%; margin:0; background:var(--bg); color:var(--fg);
+    font-family: system-ui, "Segoe UI", sans-serif; overflow:hidden; }
+  .slide { position:absolute; inset:0; display:none; padding:4vh 5vw 7vh; flex-direction:column; }
+  .slide.active { display:flex; }
+  h1 { font-size:clamp(2rem,5vw,4rem); margin:0 0 .4em; }
+  h2 { font-size:clamp(1.4rem,3vw,2.2rem); margin:0 0 .6em; color:var(--accent); }
+  p, li { font-size:clamp(1rem,1.9vw,1.5rem); line-height:1.5; }
+  .muted { color:var(--muted); }
+  .center { justify-content:center; }
+  ul { padding-left:1.2em; } li { margin:.35em 0; }
+  code { background:var(--card); padding:.1em .4em; border-radius:4px; }
+  table { border-collapse:collapse; font-size:clamp(.9rem,1.6vw,1.3rem); }
+  td, th { border:1px solid var(--line); padding:.4em .8em; text-align:left; }
+
+  /* Live slide */
+  .live { padding:2vh 1.5vw 6vh; }
+  .panes { flex:1; display:grid; grid-template-columns:1fr 1fr; gap:1vw; min-height:0; }
+  .pane { display:flex; flex-direction:column; min-height:0; background:var(--card);
+    border:1px solid var(--line); border-radius:8px; overflow:hidden; }
+  .pane header { display:flex; justify-content:space-between; align-items:center; padding:.35em .8em;
+    font-size:.95rem; border-bottom:1px solid var(--line); }
+  .pane header b { color:var(--accent); }
+  .pane iframe { flex:1; width:100%; border:0; background:#fff; }
+  .hint { text-align:center; font-size:.8rem; color:var(--muted); padding-top:.5vh; }
+
+  #nav { position:fixed; bottom:1.2vh; left:0; right:0; text-align:center; font-size:.8rem; color:var(--muted);
+    pointer-events:none; }
+</style>
+</head>
+<body>
+
+<section class="slide center">
+  <h1>Fix-It Lab Repair Cafe</h1>
+  <p class="muted">Connecting people who need something repaired with volunteer fixers.</p>
+  <p class="muted">Press → to begin</p>
+</section>
+
+<section class="slide">
+  <h2>How the demo works</h2>
+  <ul>
+    <li>Two real, signed-in users on one screen, using the deployed AWS backend.</li>
+    <li>React site → API Gateway (Cognito JWT) → Lambda → DynamoDB.</li>
+    <li>A volunteer's action appears on the requester's side: same data, two sessions.</li>
+  </ul>
+</section>
+
+<section class="slide">
+  <h2>Demo accounts</h2>
+  <table>
+    <tr><th>Role</th><th>Email</th></tr>
+    <tr><td>Requester</td><td>requester@repaircafe.com</td></tr>
+    <tr><td>Volunteer A</td><td>volunteer-a@repaircafe.com</td></tr>
+    <tr><td>Volunteer B</td><td>volunteer-b@repaircafe.com</td></tr>
+  </table>
+  <p class="muted">Each pane below is a separate browser origin (<code>localhost</code> and <code>127.0.0.1</code>), so each keeps its own login.</p>
+</section>
+
+<section class="slide live" id="live">
+  <div class="panes">
+    <div class="pane">
+      <header><span><b>Requester</b> · localhost:3000</span><span class="muted">requester@repaircafe.com</span></header>
+      <iframe id="left" data-src="http://localhost:3000/index.html" title="Requester view"></iframe>
+    </div>
+    <div class="pane">
+      <header><span><b>Volunteer</b> · 127.0.0.1:3000</span><span class="muted">volunteer-a@repaircafe.com</span></header>
+      <iframe id="right" data-src="http://127.0.0.1:3000/index.html" title="Volunteer view"></iframe>
+    </div>
+  </div>
+  <div class="hint">Click inside a pane to use it. Click the dark background (or a pane title bar) to give the deck the keyboard back, then ← → to move. <b>R</b> reloads both panes.</div>
+</section>
+
+<section class="slide center">
+  <h1>Thank you</h1>
+  <p class="muted">Questions?</p>
+</section>
+
+<div id="nav"></div>
+
+<script>
+  const slides = [...document.querySelectorAll(".slide")];
+  const nav = document.getElementById("nav");
+  let i = Math.min(Math.max(parseInt(location.hash.slice(1), 10) - 1 || 0, 0), slides.length - 1);
+
+  function show(n) {
+    i = Math.min(Math.max(n, 0), slides.length - 1);
+    slides.forEach((s, k) => s.classList.toggle("active", k === i));
+    nav.textContent = (i + 1) + " / " + slides.length;
+    history.replaceState(null, "", "#" + (i + 1));
+    // Load the iframes only when their slide is first shown, and keep them loaded afterwards
+    // so the logins survive moving between slides.
+    if (slides[i].id === "live") {
+      document.querySelectorAll("#live iframe").forEach((f) => { if (!f.src) f.src = f.dataset.src; });
+    }
+  }
+  function reloadPanes() {
+    document.querySelectorAll("#live iframe").forEach((f) => { f.src = f.dataset.src; });
+  }
+
+  // Arrow keys only work while the deck itself has focus; once you click into an iframe,
+  // that frame receives the keys (so typing in a login form works). Click the slide
+  // background or a pane title bar to return focus to the deck.
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "ArrowRight" || e.key === "PageDown" || e.key === " ") { e.preventDefault(); show(i + 1); }
+    else if (e.key === "ArrowLeft" || e.key === "PageUp") { e.preventDefault(); show(i - 1); }
+    else if (e.key === "Home") show(0);
+    else if (e.key === "End") show(slides.length - 1);
+    else if (e.key === "r" || e.key === "R") reloadPanes();
+  });
+  document.addEventListener("click", () => window.focus());
+  show(i);
+</script>
+</body>
+</html>

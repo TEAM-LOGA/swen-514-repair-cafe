@@ -30,6 +30,11 @@ locals {
   frontend_origin      = var.enable_volunteer_demo ? module.frontend.https_origin : module.frontend.website_url
   frontend_website_url = var.enable_volunteer_demo ? "${local.frontend_origin}/index.html" : local.frontend_origin
 
+  # Local copies of the site (scripts/serve-demo) used by the two-user presentation deck.
+  # localhost and 127.0.0.1 are separate browser origins, so each keeps its own login.
+  demo_local_origins = ["http://localhost:3000", "http://127.0.0.1:3000"]
+  allowed_origins    = concat([local.frontend_origin], local.demo_local_origins)
+
   # Construct the backend Lambda ARN from its known naming convention
   backend_lambda_arn = "arn:aws:lambda:${data.aws_region.current.name}:${data.aws_caller_identity.current.account_id}:function:${local.name_prefix}-backend"
 }
@@ -48,7 +53,7 @@ module "uploads" {
   source = "./modules/uploads"
 
   name_prefix     = local.name_prefix
-  allowed_origins = [local.frontend_origin]
+  allowed_origins = local.allowed_origins
 }
 
 module "database" {
@@ -127,5 +132,5 @@ module "api" {
   lambda_invoke_arn    = module.lambda_function.invoke_arn
   cognito_issuer_url   = module.auth.issuer_url
   cognito_client_id    = module.auth.client_id
-  allowed_origins      = [local.frontend_origin]
+  allowed_origins      = local.allowed_origins
 }
